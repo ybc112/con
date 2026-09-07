@@ -1,0 +1,25 @@
+{
+  "name": "nbt-staking-contracts",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:contracts": "hardhat compile",
+    "deploy:testnet": "hardhat run scripts/deploy-hardhat.cjs --network bscTestnet",
+    "deploy:upgrade:testnet": "node scripts/deploy-upgraded-staking-testnet.mjs",
+    "deploy:mainnet": "hardhat run scripts/deploy-hardhat.cjs --network bscMainnet",
+    "verify:testnet": "hardhat verify --network bscTestnet",
+    "verify:mainnet": "hardhat verify --network bscMainnet",
+    "build:frontend": "npm --prefix \"frontend 3\" run build"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "ethers": "^6.16.0",
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^6.1.2",
+    "hardhat": "^2.28.6"
+  }
+}

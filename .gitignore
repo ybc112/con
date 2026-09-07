@@ -1,0 +1,20 @@
+# 依赖与构建
+node_modules/
+dist/
+build/
+
+# 本地环境变量（含部署输出，不入库）
+.env
+.env.*
+!.env.example
+
+# 部署状态输出（含合约地址记录）
+con-staking-output.json
+
+# 日志 / 编辑器 / 系统
+*.log
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

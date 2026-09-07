@@ -1,0 +1,383 @@
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { ethers } from 'ethers';
+import { CONTRACTS } from '../utils/constants';
+import { ERC20_ABI, NBT_TOKEN_ABI, STAKING_BANK_ABI } from '../abi';
+
+const retryCall = async (fn, retries = 3, delay = 1000) => {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (i === retries - 1) throw err;
+      await new Promise(resolve => setTimeout(resolve, delay * (i + 1)));
+    }
+  }
+};
+
+const safeRead = async (fn, fallback) => {
+  try {
+    return await retryCall(fn);
+  } catch (err) {
+    console.warn('Contract read failed, using fallback:', err);
+    return fallback;
+  }
+};
+
+export function useContracts(signer, provider) {
+  const [contracts, setContracts] = useState({
+    nbtToken: null,
+    feeToken: null,
+    stakingBank: null,
+    writeNbtToken: null,
+    writeFeeToken: null,
+    writeStakingBank: null,
+  });
+
+  useEffect(() => {
+    if (!provider) return;
+
+    const nbtToken = CONTRACTS.NBT_TOKEN
+      ? new ethers.Contract(CONTRACTS.NBT_TOKEN, NBT_TOKEN_ABI, provider)
+      : null;
+    const stakingBank = CONTRACTS.STAKING_BANK
+      ? new ethers.Contract(CONTRACTS.STAKING_BANK, STAKING_BANK_ABI, provider)
+      : null;
+    const feeToken = CONTRACTS.FEE_TOKEN
+      ? new ethers.Contract(CONTRACTS.FEE_TOKEN, ERC20_ABI, provider)
+      : null;
+    const writeNbtToken = CONTRACTS.NBT_TOKEN && signer
+      ? new ethers.Contract(CONTRACTS.NBT_TOKEN, NBT_TOKEN_ABI, signer)
+      : null;
+    const writeStakingBank = CONTRACTS.STAKING_BANK && signer
+      ? new ethers.Contract(CONTRACTS.STAKING_BANK, STAKING_BANK_ABI, signer)
+      : null;
+    const writeFeeToken = CONTRACTS.FEE_TOKEN && signer
+      ? new ethers.Contract(CONTRACTS.FEE_TOKEN, ERC20_ABI, signer)
+      : null;
+
+    setContracts({
+      nbtToken,
+      feeToken,
+      stakingBank,
+      writeNbtToken,
+      writeFeeToken,
+      writeStakingBank,
+    });
+  }, [signer, provider]);
+
+  return contracts;
+}
+
+export function useStakingBank(contract, account) {
+  const [data, setData] = useState({
+    userInfo: null,
+    stakes: [],
+    miningStatus: null,
+    pendingRewardAll: '0',
+    referrals: [],
+    referralsTotal: 0,
+    rankedNodes: [],
+    rankedNodesTotal: 0,
+    currentRelease: null,
+    reinvestPreview: null,
+    interactionFeeConfig: null,
+    stakingTokenAddress: null,
+    rewardTokenAddress: null,
+    inviteReward: '1000000',
+    minReferralStakeValue: '100',
+    lockPeriod: 15 * 24 * 60 * 60,
+    stakeValueRate: '1',
+    isPaused: false,
+    loading: true,
+  });
+  const hasLoadedRef = useRef(false);
+
+  const fetchData = useCallback(async (forceRefresh = false) => {
+    // 仅在首次加载时置 loading，避免每次轮询都触发 loading 态导致界面抖动
+    if (!hasLoadedRef.current) {
+      setData(prev => ({ ...prev, loading: true }));
+    }
+
+    // 已移除后端 API：所有数据（主网/测试网）直接读链上合约
+    if (!contract) {
+      setData(prev => ({ ...prev, loading: false }));
+      return;
+    }
+
+    try {
+      const [
+        miningStatus,
+        isPaused,
+        currentRelease,
+        interactionFeeConfig,
+        stakingTokenAddress,
+        rewardTokenAddress,
+        inviteReward,
+        minReferralStakeValue,
+        lockPeriod,
+        stakeValueRate,
+        rankedData,
+      ] = await safeRead(() =>
+        Promise.all([
+          contract.getMiningStatus(),
+          contract.paused ? contract.paused().catch(() => null) : Promise.resolve(null),
+          contract.getCurrentRelease().catch(() => null),
+          contract.getInteractionFeeConfig().catch(() => null),
+          contract.stakingToken().catch(() => null),
+          contract.rewardToken().catch(() => null),
+          contract.inviteReward().catch(() => null),
+          contract.minReferralStakeValue ? contract.minReferralStakeValue().catch(() => null) : Promise.resolve(null),
+          contract.LOCK_PERIOD ? contract.LOCK_PERIOD().catch(() => null) : Promise.resolve(null),
+          contract.stakeValueRate().catch(() => null),
+          contract.getRankedNodes(0, 100).catch(() => null),
+        ]), null);
+
+      // 如果核心状态拉取失败，保留旧数据并停止 loading
+      if (!miningStatus) {
+        setData(prev => ({ ...prev, loading: false }));
+        return;
+      }
+      hasLoadedRef.current = true;
+
+      let userInfo = null;
+      let stakes = null;          // null = 未成功读取（保留旧值）；[] = 成功但为空
+      let pendingRewardAll = null; // null = 读取失败（保留旧值）
+      let pendingRankRewards = null;
+      let reinvestData = null;
+      let referrals = null;       // null = 未成功读取（保留旧值）
+      let referralsTotal = 0;
+
+      if (account) {
+        userInfo = await safeRead(() => contract.getUserInfo(account), null);
+        pendingRewardAll = await safeRead(() => contract.pendingRewardAll(account), null);
+        // V3：排名分红按期领取，当前期可领取金额作为待领取排名分红展示
+        try {
+          const epochId = Number(await contract.currentEpochId());
+          pendingRankRewards = await safeRead(() => contract.pendingEpochReward(epochId, account), null);
+        } catch { /* keep null */ }
+
+        const userStakes = await safeRead(() => contract.getUserStakes(account), null);
+        if (userStakes) {
+          const lockPeriodSeconds = Number(lockPeriod ?? data.lockPeriod);
+          const nowSeconds = Math.floor(Date.now() / 1000);
+          stakes = userStakes.stakeIds.map((id, index) => {
+            const startTime = Number(userStakes.startTimes[index]);
+            const unlockTime = startTime + lockPeriodSeconds;
+            return {
+              stakeId: Number(id),
+              amount: ethers.formatEther(userStakes.amounts[index]),
+              scoreValue: ethers.formatEther(userStakes.scoreValues?.[index] ?? 0n),
+              startTime,
+              unlockTime,
+              isUnlocked: nowSeconds >= unlockTime,
+              active: userStakes.actives[index],
+            };
+          }).filter(stake => stake.active);
+        }
+
+        const refData = await safeRead(() => contract.getReferralsPaginated(account, 0, 10), null);
+        if (refData) {
+          referrals = refData.result;
+          referralsTotal = Number(refData.total);
+        }
+
+        // V3：三源复投预览（解锁邀请奖励 + 本期排名分红 + 到期本金）
+        const reinvestPreview = await safeRead(() => contract.getReinvestPreview(account), null);
+        if (reinvestPreview) {
+          reinvestData = {
+            inviteAmount: ethers.formatEther(reinvestPreview.inviteAmount ?? reinvestPreview[0] ?? 0n),
+            rankAmount: ethers.formatEther(reinvestPreview.rankAmount ?? reinvestPreview[1] ?? 0n),
+            principalAmount: ethers.formatEther(reinvestPreview.principalAmount ?? reinvestPreview[2] ?? 0n),
+            totalAmount: ethers.formatEther(reinvestPreview.totalAmount ?? reinvestPreview[3] ?? 0n),
+            maturedStakeCount: Number(reinvestPreview.maturedStakeCount ?? reinvestPreview[4] ?? 0),
+          };
+        }
+      }
+
+      const info = userInfo?.info || userInfo?.[0];
+      const rankedNodes = rankedData
+        ? Array.from(rankedData.nodes || rankedData[0] || []).map((node, index) => ({
+            address: node,
+            score: ethers.formatEther((rankedData.scores || rankedData[1])[index]),
+            rank: index + 1,
+          }))
+        : data.rankedNodes;
+      const rankedNodesTotal = rankedData ? Number(rankedData.total || rankedData[2] || 0) : data.rankedNodesTotal;
+
+      setData(prev => ({
+        ...prev,
+        userInfo: info ? {
+          totalStaked: ethers.formatEther(info.totalStaked ?? info[0]),
+          totalWithdrawn: ethers.formatEther(info.totalWithdrawn ?? info[1]),
+          stakeCount: Number(info.stakeCount ?? info[2]),
+          activeStakeCount: Number(info.activeStakeCount ?? info[3]),
+          referrer: info.referrer ?? info[4],
+          directReferrals: Number(info.directReferrals ?? info[5]),
+          referralStakeVolume: ethers.formatEther(info.referralStakeVolume ?? info[6]),
+          personalStakeVolume: ethers.formatEther(info.personalStakeVolume ?? info[7] ?? 0n),
+          pendingInviteRewards: ethers.formatEther(info.pendingInviteRewards ?? info[8] ?? 0n),
+          totalInviteClaimed: ethers.formatEther(info.totalInviteClaimed ?? info[9] ?? 0n),
+          pendingRankRewards: pendingRankRewards !== null
+            ? ethers.formatEther(pendingRankRewards)
+            : (prev.userInfo?.pendingRankRewards ?? '0'),
+          totalRankClaimed: '0',
+          lockedInviteRewards: ethers.formatEther(info.lockedInviteRewards ?? info[10] ?? 0n),
+          inviteUnlockCursor: Number(info.inviteUnlockCursor ?? info[11] ?? 0n),
+          pendingRewards: ethers.formatEther(userInfo.pendingRewards ?? userInfo[1]),
+          totalClaimed: ethers.formatEther(userInfo.totalClaimed ?? userInfo[2]),
+          rank: Number(userInfo.rank ?? userInfo[3]),
+        } : prev.userInfo,
+        stakes: stakes !== null ? stakes : prev.stakes,
+        miningStatus: {
+          totalStaked: ethers.formatEther(miningStatus._totalStaked),
+          totalDistributed: ethers.formatEther(miningStatus._totalDistributed),
+          claimableRewards: ethers.formatEther(miningStatus._claimableRewards),
+          releaseInProgress: miningStatus._releaseInProgress,
+          startTime: Number(miningStatus._startTime),
+          rankedNodeCount: Number(miningStatus._rankedNodeCount),
+        },
+        pendingRewardAll: pendingRewardAll !== null ? ethers.formatEther(pendingRewardAll) : prev.pendingRewardAll,
+        referrals: referrals !== null ? referrals : prev.referrals,
+        referralsTotal: referrals !== null ? referralsTotal : prev.referralsTotal,
+        rankedNodes,
+        rankedNodesTotal,
+        currentRelease: currentRelease ? {
+          epochId: Number(currentRelease.epochId ?? currentRelease[0]),
+          amount: ethers.formatEther(currentRelease.poolAmount ?? currentRelease[1] ?? 0n),
+          totalNodes: Number(currentRelease.totalNodes ?? currentRelease[2] ?? 0),
+          claimStart: Number(currentRelease.claimStart ?? currentRelease[4] ?? 0),
+          claimEnd: Number(currentRelease.claimEnd ?? currentRelease[5] ?? 0),
+          totalClaimed: ethers.formatEther(currentRelease.totalClaimed ?? currentRelease[3] ?? 0n),
+          allocatedAmount: ethers.formatEther(currentRelease.totalClaimed ?? currentRelease[3] ?? 0n),
+          settled: currentRelease.settled ?? currentRelease[6] ?? false,
+          disabled: currentRelease.disabled ?? currentRelease[7] ?? false,
+          finalized: currentRelease.settled ?? currentRelease[6] ?? false,
+          nextRank: 0,
+        } : prev.currentRelease,
+        reinvestPreview: reinvestData || prev.reinvestPreview,
+        interactionFeeConfig: interactionFeeConfig ? {
+          feeToken: interactionFeeConfig.feeToken ?? interactionFeeConfig[0],
+          fee: ethers.formatEther(interactionFeeConfig.fee ?? interactionFeeConfig[1]),
+          receiverA: interactionFeeConfig.receiverA ?? interactionFeeConfig[2],
+          receiverB: interactionFeeConfig.receiverB ?? interactionFeeConfig[3],
+        } : prev.interactionFeeConfig,
+        stakingTokenAddress: stakingTokenAddress || prev.stakingTokenAddress,
+        rewardTokenAddress: rewardTokenAddress || prev.rewardTokenAddress,
+        inviteReward: ethers.formatEther(inviteReward ?? ethers.parseEther(prev.inviteReward || '1000000')),
+        minReferralStakeValue: ethers.formatEther(minReferralStakeValue ?? ethers.parseEther(prev.minReferralStakeValue || '100')),
+        lockPeriod: Number(lockPeriod ?? prev.lockPeriod),
+        stakeValueRate: ethers.formatEther(stakeValueRate ?? ethers.parseEther(prev.stakeValueRate || '1')),
+        isPaused: typeof isPaused === 'boolean' ? isPaused : prev.isPaused,
+        loading: false,
+      }));
+    } catch (err) {
+      console.error('Fetch staking bank data error:', err);
+      setData(prev => ({ ...prev, loading: false }));
+    }
+  }, [contract, account]);
+
+  useEffect(() => {
+    fetchData(false);
+    const interval = setInterval(() => fetchData(false), 30000);
+    return () => clearInterval(interval);
+  }, [fetchData]);
+
+  return { ...data, refetch: () => fetchData(true) };
+}
+
+export function useTokenBalance(tokenContract, account) {
+  const [balance, setBalance] = useState('0');
+  const [loading, setLoading] = useState(true);
+
+  const fetchBalance = useCallback(async () => {
+    if (!tokenContract || !account) {
+      setBalance('0');
+      setLoading(false);
+      return;
+    }
+
+    const bal = await safeRead(() => tokenContract.balanceOf(account), null);
+    if (bal !== null) {
+      setBalance(ethers.formatEther(bal));
+    }
+    setLoading(false);
+  }, [tokenContract, account]);
+
+  useEffect(() => {
+    fetchBalance();
+    const interval = setInterval(fetchBalance, 30000);
+    return () => clearInterval(interval);
+  }, [fetchBalance]);
+
+  return { balance, loading, refetch: fetchBalance };
+}
+
+export function useAllowance(tokenContract, owner, spender) {
+  const [allowance, setAllowance] = useState('0');
+
+  const fetchAllowance = useCallback(async () => {
+    if (!tokenContract || !owner || !spender) {
+      setAllowance('0');
+      return;
+    }
+
+    const allow = await safeRead(() => tokenContract.allowance(owner, spender), null);
+    if (allow !== null) {
+      setAllowance(ethers.formatEther(allow));
+    }
+  }, [tokenContract, owner, spender]);
+
+  useEffect(() => {
+    fetchAllowance();
+  }, [fetchAllowance]);
+
+  return { allowance, refetch: fetchAllowance };
+}
+
+export function useTokenFeeConfig(tokenContract, account) {
+  const [data, setData] = useState({
+    feeConfig: null,
+    isExcluded: false,
+    loading: true,
+  });
+
+  const fetchData = useCallback(async () => {
+    if (!tokenContract) {
+      setData(prev => ({ ...prev, loading: false }));
+      return;
+    }
+
+    setData(prev => ({ ...prev, loading: true }));
+
+    const feeConfig = await safeRead(() => tokenContract.getFeeConfig(), null);
+    let isExcluded = null;
+    if (account) {
+      isExcluded = await safeRead(() => tokenContract.isExcludedFromFee(account), null);
+    }
+
+    if (!feeConfig) {
+      setData(prev => ({ ...prev, loading: false }));
+      return;
+    }
+
+    setData(prev => ({
+      feeConfig: {
+        buyFee: Number(feeConfig._buyFee) / 100,
+        sellFee: Number(feeConfig._sellFee) / 100,
+        feeReceiver: feeConfig._feeReceiver,
+      },
+      isExcluded: typeof isExcluded === 'boolean' ? isExcluded : prev.isExcluded,
+      loading: false,
+    }));
+  }, [tokenContract, account]);
+
+  useEffect(() => {
+    fetchData();
+    const interval = setInterval(fetchData, 30000);
+    return () => clearInterval(interval);
+  }, [fetchData]);
+
+  return { ...data, refetch: fetchData };
+}
+
+export { ERC20_ABI };
