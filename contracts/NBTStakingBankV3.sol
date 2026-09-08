@@ -73,7 +73,7 @@ contract NBTStakingBankV3 {
     uint256 public constant DISPLAY_PERIOD = 3 days;
     uint256 public constant CLAIM_PERIOD = 7 days;
     uint256 public constant MIN_NODES = 10;
-    uint256 public constant DEFAULT_INVITE_REWARD = 1_000_000 ether;
+    uint256 public constant DEFAULT_INVITE_REWARD = 100 ether;
     uint256 public constant DEFAULT_MIN_REFERRAL_STAKE_VALUE = 100 ether;
 
     uint256 public totalStaked;
