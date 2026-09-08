@@ -10,7 +10,7 @@
     "deploy:mainnet": "hardhat run scripts/deploy-hardhat.cjs --network bscMainnet",
     "verify:testnet": "hardhat verify --network bscTestnet",
     "verify:mainnet": "hardhat verify --network bscMainnet",
-    "build:frontend": "npm --prefix \"frontend 3\" run build"
+    "build:frontend": "npm --prefix frontend run build"
   },
   "dependencies": {
     "cors": "^2.8.6",

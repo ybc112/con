@@ -1,0 +1,18 @@
+{
+  "buildCommand": "cd frontend && npm install && npm run build",
+  "outputDirectory": "frontend/dist",
+  "installCommand": "cd frontend && npm install",
+  "framework": "vite",
+  "build": {
+    "env": {
+      "VITE_CHAIN_ID": "0x38",
+      "VITE_NBT_TOKEN": "0x66A585556138EbBb44Da0fF1324C796C44eb5ED1",
+      "VITE_NBT_PAIR": "",
+      "VITE_FEE_TOKEN": ""
+    }
+  },
+  "routes": [
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "dest": "/index.html" }
+  ]
+}
