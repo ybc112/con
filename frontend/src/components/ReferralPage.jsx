@@ -154,7 +154,7 @@ export default function ReferralPage({
       <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-[#111827]">
         <div className="absolute inset-0 bg-gradient-to-r from-[#FFB800]/15 via-[#38BDF8]/10 to-transparent" />
         <div className="relative p-5 sm:p-8 flex flex-col md:flex-row md:items-center gap-6">
-          <img src="/con-logo.png" alt="CON" className="w-20 h-20 rounded-full object-cover shadow-lg shadow-[#FFB800]/30" />
+          <img src="/con-logo.jpg" alt="CON" className="w-20 h-20 rounded-full object-cover shadow-lg shadow-[#FFB800]/30" />
           <div className="flex-1">
             <h1 className="text-2xl sm:text-4xl font-bold text-white">{t('cz.referral.title')}</h1>
             <p className="text-white/55 mt-2">{t('cz.referral.subtitle')}</p>

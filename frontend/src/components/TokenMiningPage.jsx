@@ -360,7 +360,7 @@ export default function TokenMiningPage({
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="neon-card">
           <div className="neon-card-inner h-full">
             <div className="flex items-center gap-4 mb-6">
-              <img src="/con-logo.png" alt="CON" className="w-16 h-16 rounded-full object-cover shadow-lg shadow-[#FFB800]/30" />
+              <img src="/con-logo.jpg" alt="CON" className="w-16 h-16 rounded-full object-cover shadow-lg shadow-[#FFB800]/30" />
               <div>
                 <h1 className="text-2xl md:text-4xl font-bold text-white">{t('cz.node.pageTitle')}</h1>
                 <p className="text-white/50 mt-1">{t('cz.node.pageSubtitle')}</p>

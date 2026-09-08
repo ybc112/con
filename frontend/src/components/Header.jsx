@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FiMenu, FiX, FiExternalLink, FiShield, FiGlobe, FiDownload } from 'react-icons/fi';
+import { FiMenu, FiX, FiExternalLink, FiShield, FiGlobe } from 'react-icons/fi';
 import { CURRENT_NETWORK, formatAddress, getExplorerAddressUrl } from '../utils/constants';
 import { useLanguage } from '../contexts/LanguageContext';
 
@@ -12,7 +12,7 @@ function Logo({ onClick }) {
       onClick={onClick}>
       <div className="relative">
         <img
-          src="/con-logo.png"
+          src="/con-logo.jpg"
           alt="CON"
           className="w-9 h-9 sm:w-11 sm:h-11 rounded-full shadow-lg shadow-[#FFB800]/30 group-hover:shadow-[#FFB800]/50 transition-shadow object-cover"
         />
@@ -74,22 +74,6 @@ export default function Header({ account, isConnecting, isCorrectNetwork, onConn
                   )}
                 </button>
               ))}
-              <a
-                href="/whitepaper.pdf"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 nav-link"
-              >
-                {t('header.whitepaper')}
-              </a>
-              <a
-                href="https://t.me/CONStaking"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 nav-link"
-              >
-                {t('header.telegram')}
-              </a>
             </nav>
 
             {/* Wallet Connection */}
@@ -184,24 +168,6 @@ export default function Header({ account, isConnecting, isCorrectNetwork, onConn
                   )}
                 </button>
               ))}
-              <a
-                href="/whitepaper.pdf"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full text-left flex items-center gap-2 nav-link"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                {t('header.whitepaper')}
-              </a>
-              <a
-                href="https://t.me/CONStaking"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full text-left flex items-center gap-2 nav-link"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                {t('header.telegram')}
-              </a>
               {account && (
                 <div className="pt-3 mt-3 border-t border-white/5">
                   <div className="flex items-center gap-2 px-4 py-2">

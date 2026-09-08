@@ -25,7 +25,7 @@ export default function HomePage({ onPageChange, stakingData }) {
     <div className="space-y-7 md:space-y-16">
       <section className="relative overflow-hidden rounded-2xl md:rounded-[2rem] min-h-0 md:min-h-[72vh] flex items-center py-6 sm:py-10 md:py-0">
         <div className="absolute inset-0 overflow-hidden rounded-2xl md:rounded-[2rem]">
-          <img src="/con-logo.png" alt="CON" className="absolute right-[-120px] top-[42%] -translate-y-1/2 w-[360px] h-[360px] sm:right-[-90px] sm:w-[420px] sm:h-[420px] md:w-[620px] md:h-[620px] rounded-full object-cover opacity-20 md:opacity-25 blur-[1px] animate-float" />
+          <img src="/con-logo.jpg" alt="CON" className="absolute right-[-120px] top-[42%] -translate-y-1/2 w-[360px] h-[360px] sm:right-[-90px] sm:w-[420px] sm:h-[420px] md:w-[620px] md:h-[620px] rounded-full object-cover opacity-20 md:opacity-25 blur-[1px] animate-float" />
           <div className="absolute inset-0 bg-gradient-to-r from-[#0B1120] via-[#0B1120]/90 to-[#0B1120]/40" />
           {/* 动态光晕装饰（科技蓝，克制收敛） */}
           <div className="absolute -left-24 top-10 w-72 h-72 rounded-full bg-[#2563EB]/12 blur-[90px] animate-pulse-glow pointer-events-none" />
