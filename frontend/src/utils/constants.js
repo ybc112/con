@@ -122,7 +122,7 @@ export const CONTRACT_ERRORS = {
   'No referral rewards': '暂无推荐奖励',
   'No rewards': '暂无可领取奖励',
   'Compound token mismatch': '当前奖励币不能直接复投',
-  'Monthly release in progress': '月度释放分配中，暂时不能改变排名',
+  'Monthly release in progress': '结算分配中，暂时不能改变排名',
   'Insufficient invite reward reserve': '邀请奖励储备不足，请先给新版质押合约充值奖励',
   'Referrer mismatch': '推荐人与已绑定地址不一致',
   'Rewards depleted': '奖励池已耗尽',

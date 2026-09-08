@@ -100,12 +100,32 @@ export default function TokenMiningPage({
   const activeRelease = miningStatus?.releaseInProgress;
   const minReferralStakeValue = stakingData?.minReferralStakeValue || '100';
 
-  const rankBands = [
-    { label: t('cz.node.bandTop10'), percent: '50%', color: '#FFB800' },
-    { label: t('cz.node.band11To50'), percent: '30%', color: '#38BDF8' },
-    { label: t('cz.node.band51To100'), percent: '15%', color: '#FF8A00' },
-    { label: t('cz.node.bandAfter100'), percent: '5%', color: '#94A3B8' },
-  ];
+  // 分红档位与合约 _bucketWeights 一致，按当前节点数动态显示
+  const rankBands = useMemo(() => {
+    const n = Number(miningStatus?.rankedNodeCount || 0);
+    if (n === 0 || n <= 10) {
+      return [{ label: t('cz.node.bandTop10'), percent: '100%', color: '#FFB800' }];
+    }
+    if (n <= 50) {
+      return [
+        { label: t('cz.node.bandTop10'), percent: '50%', color: '#FFB800' },
+        { label: t('cz.node.band11To50'), percent: '50%', color: '#38BDF8' },
+      ];
+    }
+    if (n <= 100) {
+      return [
+        { label: t('cz.node.bandTop10'), percent: '50%', color: '#FFB800' },
+        { label: t('cz.node.band11To50'), percent: '30%', color: '#38BDF8' },
+        { label: t('cz.node.band51To100'), percent: '20%', color: '#FF8A00' },
+      ];
+    }
+    return [
+      { label: t('cz.node.bandTop10'), percent: '50%', color: '#FFB800' },
+      { label: t('cz.node.band11To50'), percent: '30%', color: '#38BDF8' },
+      { label: t('cz.node.band51To100'), percent: '15%', color: '#FF8A00' },
+      { label: t('cz.node.bandAfter100'), percent: '5%', color: '#94A3B8' },
+    ];
+  }, [miningStatus?.rankedNodeCount, t]);
 
   const selectedReferrer = useMemo(() => {
     if (hasReferrer) return userInfo.referrer;

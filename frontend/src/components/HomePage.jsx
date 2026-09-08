@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { FiArrowRight, FiAward, FiCheckCircle, FiGift, FiTrendingUp, FiUsers, FiZap } from 'react-icons/fi';
 import { formatNumber } from '../utils/constants';
@@ -14,12 +15,32 @@ export default function HomePage({ onPageChange, stakingData }) {
   ];
   const isLoading = stakingData?.loading !== false;
 
-  const bands = [
-    { rank: t('cz.home.bandTop10'), share: '50%', note: t('cz.home.noteCore') },
-    { rank: t('cz.home.band11To50'), share: '30%', note: t('cz.home.noteClimb') },
-    { rank: t('cz.home.band51To100'), share: '15%', note: t('cz.home.noteGrowth') },
-    { rank: t('cz.home.bandAfter100'), share: '5%', note: t('cz.home.noteUniversal') },
-  ];
+  // 分红档位与合约 _bucketWeights 一致，按当前节点数动态显示
+  const bands = useMemo(() => {
+    const n = Number(miningStatus?.rankedNodeCount ?? 0);
+    if (n === 0 || n <= 10) {
+      return [{ rank: t('cz.home.bandTop10'), share: '100%', note: t('cz.home.noteCore') }];
+    }
+    if (n <= 50) {
+      return [
+        { rank: t('cz.home.bandTop10'), share: '50%', note: t('cz.home.noteCore') },
+        { rank: t('cz.home.band11To50'), share: '50%', note: t('cz.home.noteClimb') },
+      ];
+    }
+    if (n <= 100) {
+      return [
+        { rank: t('cz.home.bandTop10'), share: '50%', note: t('cz.home.noteCore') },
+        { rank: t('cz.home.band11To50'), share: '30%', note: t('cz.home.noteClimb') },
+        { rank: t('cz.home.band51To100'), share: '20%', note: t('cz.home.noteGrowth') },
+      ];
+    }
+    return [
+      { rank: t('cz.home.bandTop10'), share: '50%', note: t('cz.home.noteCore') },
+      { rank: t('cz.home.band11To50'), share: '30%', note: t('cz.home.noteClimb') },
+      { rank: t('cz.home.band51To100'), share: '15%', note: t('cz.home.noteGrowth') },
+      { rank: t('cz.home.bandAfter100'), share: '5%', note: t('cz.home.noteUniversal') },
+    ];
+  }, [miningStatus?.rankedNodeCount, t]);
 
   return (
     <div className="space-y-7 md:space-y-16">
