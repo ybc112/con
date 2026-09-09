@@ -67,10 +67,27 @@ export const NETWORKS = {
     ],
     blockExplorerUrls: ['https://bscscan.com'],
   },
+  SEPOLIA: {
+    chainId: '0xaa36a7',
+    chainName: 'Sepolia Testnet',
+    nativeCurrency: {
+      name: 'Sepolia ETH',
+      symbol: 'ETH',
+      decimals: 18,
+    },
+    rpcUrls: [
+      'https://ethereum-sepolia-rpc.publicnode.com',
+      'https://rpc.sepolia.org',
+      'https://1rpc.io/sepolia',
+    ],
+    blockExplorerUrls: ['https://sepolia.etherscan.io'],
+  },
 };
 
 export const CURRENT_NETWORK =
-  configuredChainId === '0x38' ? NETWORKS.BSC_MAINNET : NETWORKS.BSC_TESTNET;
+  configuredChainId === '0x38' ? NETWORKS.BSC_MAINNET
+  : configuredChainId === '0xaa36a7' ? NETWORKS.SEPOLIA
+  : NETWORKS.BSC_TESTNET;
 
 export const EXPECTED_CHAIN_ID = parseInt(CURRENT_NETWORK.chainId, 16);
 
