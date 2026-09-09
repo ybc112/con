@@ -64,7 +64,7 @@ async function getWallet() {
   return wallet;
 }
 
-const ERC20 = ['function balanceOf(address) view returns (uint256)', 'function approve(address,uint256) returns (bool)', 'function allowance(address,address) view returns (uint256)'];
+const ERC20 = ['function balanceOf(address) view returns (uint256)', 'function approve(address,uint256) returns (bool)', 'function allowance(address,address) view returns (uint256)', 'function transfer(address,uint256) returns (bool)'];
 const ROUTER = ['function addLiquidityETH(address,uint256,uint256,uint256,address,uint256) payable returns (uint256,uint256,uint256)'];
 const BANK_VIEW = ['function stakingToken() view returns (address)', 'function rewardToken() view returns (address)', 'function feeReceiver() view returns (address)', 'function interactionFee() view returns (uint256)', 'function inviteReward() view returns (uint256)', 'function minReferralStakeValue() view returns (uint256)', 'function stakeValueRate() view returns (uint256)', 'function totalStaked() view returns (uint256)', 'function currentEpochId() view returns (uint256)'];
 
@@ -92,8 +92,18 @@ async function step_deploy(wallet, state) {
   console.log('部署 NBTStakingBankV3 ...');
   console.log('  stakingToken/rewardToken:', state.testCon);
   console.log('  feeReceiver:', CONFIG.feeReceiver, '| 交互费:', CONFIG.interactionFeeEth, 'ETH');
+  // 钱包可能被其它进程并发使用：显式取最新 pending nonce 并抬高 gas，抢占打包避免 nonce 竞争
+  const pendingNonce = await wallet.getNonce('pending');
+  const feeData = await wallet.provider.getFeeData();
+  const deployOpts = {
+    gasLimit: 6000000,
+    nonce: pendingNonce,
+    maxFeePerGas: feeData.maxFeePerGas ? feeData.maxFeePerGas * 2n : undefined,
+    maxPriorityFeePerGas: feeData.maxPriorityFeePerGas ? feeData.maxPriorityFeePerGas * 2n : undefined,
+  };
+  console.log('  pending nonce:', pendingNonce, '| gas x2 抢占');
   const factory = new ethers.ContractFactory(bankArt.abi, bankArt.bytecode, wallet);
-  const c = await factory.deploy(state.testCon, state.testCon, CONFIG.feeReceiver, fee, { gasLimit: 4000000 });
+  const c = await factory.deploy(state.testCon, state.testCon, CONFIG.feeReceiver, fee, deployOpts);
   const rc = await c.waitForDeployment();
   const addr = await rc.getAddress();
   console.log('  部署成功，质押合约地址:', addr, 'tx:', c.deploymentTransaction().hash);
@@ -127,7 +137,7 @@ async function step_fund(wallet, state) {
     const amt = ethers.parseEther(batch);
     const bal = await con.balanceOf(wallet.address);
     if (bal < amt) throw new Error('钱包 tCON 不足：需要 ' + batch + ' CON，当前 ' + ethers.formatEther(bal));
-    const tx = await con.transfer(state.stakingBank, amt, { gasLimit: 300000 });
+    const tx = await con['transfer'](state.stakingBank, amt, { gasLimit: 300000 });
     await tx.wait();
     console.log('  已注入 ' + batch + ' tCON → 合约，tx:', tx.hash);
     await new Promise((r) => setTimeout(r, 3000)); // 防连续交易限流
@@ -157,7 +167,7 @@ async function step_pool(wallet, state) {
   console.log('添加流动性 ' + CONFIG.poolEth + ' ETH + ' + CONFIG.poolCon + ' tCON ...');
   const tx = await router.addLiquidityETH(
     state.testCon, amtCon, 0, 0, wallet.address, deadline,
-    { value: amtEth, gasLimit: 500000 }
+    { value: amtEth, gasLimit: 6000000 }
   );
   await tx.wait();
   console.log('  底池创建成功，tx:', tx.hash);
