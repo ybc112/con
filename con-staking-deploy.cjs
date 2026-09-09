@@ -71,7 +71,7 @@ async function getWallet() {
   return wallet;
 }
 
-const ERC20 = ['function balanceOf(address) view returns (uint256)', 'function approve(address,uint256) returns (bool)', 'function allowance(address,address) view returns (uint256)'];
+const ERC20 = ['function balanceOf(address) view returns (uint256)', 'function approve(address,uint256) returns (bool)', 'function allowance(address,address) view returns (uint256)', 'function transfer(address,uint256) returns (bool)'];
 const ROUTER = ['function addLiquidityETH(address,uint256,uint256,uint256,address,uint256) payable returns (uint256,uint256,uint256)'];
 const BANK_VIEW = ['function stakingToken() view returns (address)', 'function rewardToken() view returns (address)', 'function feeReceiver() view returns (address)', 'function interactionFee() view returns (uint256)', 'function inviteReward() view returns (uint256)', 'function minReferralStakeValue() view returns (uint256)', 'function stakeValueRate() view returns (uint256)', 'function totalStaked() view returns (uint256)', 'function currentEpochId() view returns (uint256)'];
 
@@ -83,7 +83,7 @@ async function step_deploy(wallet, state) {
   console.log('  stakingToken/rewardToken:', CONFIG.conToken);
   console.log('  feeReceiver:', CONFIG.feeReceiver, '| 交互费:', CONFIG.interactionFeeBnb, 'BNB');
   const factory = new ethers.ContractFactory(abi, bytecode, wallet);
-  const c = await factory.deploy(CONFIG.conToken, CONFIG.conToken, CONFIG.feeReceiver, fee, { gasLimit: 4000000 });
+  const c = await factory.deploy(CONFIG.conToken, CONFIG.conToken, CONFIG.feeReceiver, fee, { gasLimit: 6000000 });
   const rc = await c.waitForDeployment();
   const addr = await rc.getAddress();
   console.log('  部署成功，合约地址:', addr, 'tx:', c.deploymentTransaction().hash);
@@ -116,7 +116,7 @@ async function step_fund(wallet, state) {
     const amt = ethers.parseEther(batch);
     const bal = await con.balanceOf(wallet.address);
     if (bal < amt) throw new Error('钱包 CON 不足：需要 ' + batch + ' CON，当前 ' + ethers.formatEther(bal));
-    const tx = await con.transfer(state.stakingBank, amt, { gasLimit: 300000 });
+    const tx = await con['transfer'](state.stakingBank, amt, { gasLimit: 300000 });
     await tx.wait();
     console.log('  已注入 ' + batch + ' CON → 合约，tx:', tx.hash);
     await new Promise((r) => setTimeout(r, 3000)); // 防连续交易限流
