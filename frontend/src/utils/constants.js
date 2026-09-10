@@ -13,8 +13,12 @@ const STALE_TESTNET_ADDRESSES = new Set([
   '0xc84a22989be328e2caab41f1fe6bc8ed78004d04',
 ]);
 
-// 当前链由 VITE_CHAIN_ID 决定：0x38 主网 / 0x61 测试网，默认主网
-const configuredChainId = import.meta.env.VITE_CHAIN_ID || '0x38';
+// ============ 临时测试模式：强制 Sepolia 测试网（Vercel 控制台环境变量会覆盖 vercel.json，故代码层强制；测完把 TEST_MODE 改为 false 即切回主网）============
+const TEST_MODE = true;
+const TEST_NBT_TOKEN = '0x9868386Cf6175fE560eACaDaB71ce44BFE308fE7';   // Sepolia tCON
+const TEST_STAKING_BANK = '0xe728538441a6671c948a24d990120Ac17E7E407A'; // Sepolia 质押合约
+// 当前链由 VITE_CHAIN_ID 决定：0x38 主网 / 0x61 测试网 / 0xaa36a7 Sepolia，默认主网
+const configuredChainId = TEST_MODE ? '0xaa36a7' : (import.meta.env.VITE_CHAIN_ID || '0x38');
 
 const mainnetSafeAddress = (value, fallback) => {
   if (!value) return fallback;
@@ -23,8 +27,8 @@ const mainnetSafeAddress = (value, fallback) => {
 };
 
 export const CONTRACTS = {
-  NBT_TOKEN: mainnetSafeAddress(import.meta.env.VITE_NBT_TOKEN, MAINNET_CONTRACTS.NBT_TOKEN),
-  STAKING_BANK: mainnetSafeAddress(import.meta.env.VITE_STAKING_BANK, MAINNET_CONTRACTS.STAKING_BANK),
+  NBT_TOKEN: TEST_MODE ? TEST_NBT_TOKEN : mainnetSafeAddress(import.meta.env.VITE_NBT_TOKEN, MAINNET_CONTRACTS.NBT_TOKEN),
+  STAKING_BANK: TEST_MODE ? TEST_STAKING_BANK : mainnetSafeAddress(import.meta.env.VITE_STAKING_BANK, MAINNET_CONTRACTS.STAKING_BANK),
   NBT_PAIR: import.meta.env.VITE_NBT_PAIR || '',
   FEE_TOKEN: import.meta.env.VITE_FEE_TOKEN || MAINNET_CONTRACTS.FEE_TOKEN,
 };
