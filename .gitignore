@@ -10,6 +10,11 @@ build/
 
 # 部署状态输出（含合约地址记录）
 con-staking-output.json
+sepolia-output.json
+
+# 测试覆盖率产物
+coverage/
+coverage.json
 
 # 日志 / 编辑器 / 系统
 *.log
