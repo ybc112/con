@@ -16,7 +16,7 @@ const STALE_TESTNET_ADDRESSES = new Set([
 // ============ 临时测试模式：强制 Sepolia 测试网（Vercel 控制台环境变量会覆盖 vercel.json，故代码层强制；测完把 TEST_MODE 改为 false 即切回主网）============
 const TEST_MODE = true;
 const TEST_NBT_TOKEN = '0x9868386Cf6175fE560eACaDaB71ce44BFE308fE7';   // Sepolia tCON
-const TEST_STAKING_BANK = '0xe728538441a6671c948a24d990120Ac17E7E407A'; // Sepolia 质押合约
+const TEST_STAKING_BANK = '0x7e4DBfF0d6d4AE36cA8f2F16c4B06E42C02D001d'; // Sepolia 质押合约（修复版）
 // 当前链由 VITE_CHAIN_ID 决定：0x38 主网 / 0x61 测试网 / 0xaa36a7 Sepolia，默认主网
 const configuredChainId = TEST_MODE ? '0xaa36a7' : (import.meta.env.VITE_CHAIN_ID || '0x38');
 
