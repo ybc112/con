@@ -676,4 +676,118 @@ describe('NBTStakingBankV3 合约逻辑测试', function () {
       expect(ownerAfter - ownerBefore).to.equal(ethers.parseEther('5'));
     });
   });
+
+  describe('缺陷修复回归（F01-F10）', function () {
+    it('F01：disabled 合并期奖池被储备预留，低储备不再资不抵债', async function () {
+      const [owner, alice, bob, carol, dave, eve] = await ethers.getSigners();
+      const TestCON = await ethers.getContractFactory('TestCON');
+      const con = await TestCON.deploy(ethers.parseEther('2000'));
+      await con.transfer(alice.address, ethers.parseEther('500'));
+      await con.transfer(bob.address, ethers.parseEther('500'));
+      await con.transfer(carol.address, ethers.parseEther('200'));
+      await con.transfer(dave.address, ethers.parseEther('200'));
+      await con.transfer(eve.address, ethers.parseEther('200'));
+      const Bank = await ethers.getContractFactory('NBTStakingBankV3');
+      const bank = await Bank.deploy(con.target, con.target, owner.address, FEE);
+      // 无储备。alice/bob/carol 各质押 1（低于门槛，不触发邀请奖励），链式绑定
+      await stakeAs(bank, con, alice, 1n, bob.address);
+      await stakeAs(bank, con, bob, 1n, carol.address);
+      await stakeAs(bank, con, carol, 1n, dave.address);
+      // 开期（节点 <10 → disabled）+ 注资 100
+      await bank.openEpoch();
+      await con.connect(owner).approve(bank.target, ethers.MaxUint256);
+      await bank.fundEpoch(ethers.parseEther('100'));
+      // 新用户 eve 质押 100 触发 dave 的 100 CON 邀请奖励：
+      // 修复后 disabled 期奖池被预留，可用储备=0 → 整笔回滚，避免资不抵债
+      await con.connect(eve).approve(bank.target, ethers.MaxUint256);
+      await expect(bank.connect(eve).stake(ethers.parseEther('100'), dave.address, { value: FEE }))
+        .to.be.revertedWithCustomError(bank, 'NoInviteReserve');
+    });
+
+    it('F04：领取期开始后禁止追加注资（ClaimWindowStarted）', async function () {
+      const { bank, con, owner } = await loadFixture(deployFixture);
+      const users = await setup10Nodes(bank, con);
+      await bank.openEpoch();
+      await con.connect(owner).approve(bank.target, ethers.MaxUint256);
+      await bank.fundEpoch(ethers.parseEther('1000')); // 展示期内注资 OK
+      await advance(DAYS(3) + 1); // 进入领取期
+      await expect(bank.fundEpoch(ethers.parseEther('500')))
+        .to.be.revertedWithCustomError(bank, 'ClaimWindowStarted');
+      // disabled 期（合并）不设领取窗口，仍可注资
+      const { bank: b2, con: c2, owner: o2 } = await loadFixture(deployFixture);
+      await stakeAs(b2, c2, (await ethers.getSigners())[2], ethers.parseEther('1'), (await ethers.getSigners())[3].address);
+      await b2.openEpoch();
+      await c2.connect(o2).approve(b2.target, ethers.MaxUint256);
+      await b2.fundEpoch(ethers.parseEther('10'));
+    });
+
+    it('F07：getRankClaimed 累计排名分红', async function () {
+      const { bank, con, owner } = await loadFixture(deployFixture);
+      const users = await setup10Nodes(bank, con);
+      await bank.openEpoch();
+      await con.connect(owner).approve(bank.target, ethers.MaxUint256);
+      await bank.fundEpoch(ethers.parseEther('1000'));
+      await advance(DAYS(3) + 1);
+      expect(await bank.getRankClaimed(users[0].address)).to.equal(0);
+      await bank.connect(users[0])['claimEpochReward()']({ value: FEE });
+      expect(await bank.getRankClaimed(users[0].address)).to.equal(ethers.parseEther('50'));
+      // 复投路径也累计：users[1] 用 reinvest 领取排名分红
+      const prev = await bank.getRankClaimed(users[1].address);
+      const preview = await bank.getReinvestPreview(users[1].address);
+      if (preview.rankAmount > 0n && preview.inviteAmount + preview.rankAmount + preview.principalAmount > 0n) {
+        await bank.connect(users[1]).reinvest(ZERO);
+        expect(await bank.getRankClaimed(users[1].address)).to.equal(prev + preview.rankAmount);
+      }
+    });
+
+    it('F08：21 层推荐环被拒绝（深度上限后仍检测链尾）', async function () {
+      const { bank, con } = await loadFixture(deployFixture);
+      const signers = await ethers.getSigners();
+      // 取 21 个账户：A0→A1→...→A20 链式绑定（共 20 层绑定），最后一次 A20→A0 形成 21 层环
+      const users = signers.slice(0, 21);
+      for (const u of users) await con.transfer(u.address, ethers.parseEther('100'));
+      // 前 20 个：Ai 绑定 referrer=Ai+1（A0→A1...A19→A20），各自质押 1（不触发邀请，避免负债干扰）
+      await bank.setMinReferralStakeValue(ethers.parseEther('1000'));
+      for (let i = 0; i < 20; i++) {
+        await stakeAs(bank, con, users[i], 1n, users[i + 1].address);
+      }
+      // A20 尝试绑定 A0（21 层环）：F08 修复后应拒绝
+      await con.connect(users[20]).approve(bank.target, ethers.MaxUint256);
+      await expect(bank.connect(users[20]).stake(1n, users[0].address, { value: FEE }))
+        .to.be.revertedWithCustomError(bank, 'CircularReferral');
+    });
+
+    it('F09：零计分本金复投不保留旧质押单、不重复计算本金', async function () {
+      const { bank, con, alice, bob } = await loadFixture(deployFixture);
+      await bank.setStakeValueRate(1); // 1 CON = 1e-18 U，质押 1 wei 计分为 0
+      await stakeAs(bank, con, alice, 1n, bob.address);
+      const st0 = await bank.getStakeRecord(alice.address, 0);
+      expect(st0.scoreValue).to.equal(0n);
+      await advance(DAYS(15) + 1);
+      await bank.connect(alice).reinvest(bob.address);
+      // 旧单关闭，totalStaked 只有新单 1 wei，不翻倍
+      const st0b = await bank.getStakeRecord(alice.address, 0);
+      expect(st0b.active).to.equal(false);
+      expect(await bank.totalStaked()).to.equal(1n);
+      const info = await bank.getUserInfo(alice.address);
+      expect(info.info.activeStakeCount).to.equal(1);
+    });
+
+    it('F10：档间舍入尾差全部分配（11 节点、101 wei 奖池）', async function () {
+      const { bank } = await loadFixture(deployFixture);
+      const pool = 101n;
+      let sum = 0n;
+      for (let r = 1; r <= 11; r++) {
+        sum += await bank.getRankRewardPreview(pool, 11, r);
+      }
+      expect(sum).to.equal(pool);
+      // 4 档场景（101 节点）同样 100% 分完
+      const pool2 = 10001n;
+      let sum2 = 0n;
+      for (let r = 1; r <= 101; r++) {
+        sum2 += await bank.getRankRewardPreview(pool2, 101, r);
+      }
+      expect(sum2).to.equal(pool2);
+    });
+  });
 });

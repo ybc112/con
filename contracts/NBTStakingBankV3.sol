@@ -107,6 +107,8 @@ contract NBTStakingBankV3 {
 
     address[] private _nodes;
     mapping(address => uint256) private _nodeIndexPlusOne;
+    // F07：每个用户累计已领取的排名分红（不含邀请奖励），供前端展示总收益
+    mapping(address => uint256) public rankClaimed;
 
     event Deposit(address indexed user, address indexed referrer, uint256 indexed stakeId, uint256 amount);
     event Withdraw(address indexed user, uint256 indexed stakeId, uint256 amount);
@@ -164,6 +166,7 @@ contract NBTStakingBankV3 {
     error NoActiveEpoch();
     error EpochAlreadySettled();
     error PoolMerged();
+    error ClaimWindowStarted();
     error OutOfClaimWindow();
     error NotSnapshotNode();
     error AlreadyClaimed();
@@ -350,6 +353,7 @@ contract NBTStakingBankV3 {
             ep.totalClaimed += share;
             totalRankDistributed += share;
             totalRankClaimed += share;
+            rankClaimed[msg.sender] += share;
             rankAmount += share;
             emit EpochRewardClaimed(i, msg.sender, rank, share);
         }
@@ -372,7 +376,7 @@ contract NBTStakingBankV3 {
         if (user.activeStakeCount - maturedCount + 1 > MAX_ACTIVE_STAKES) revert TooManyActiveStakes();
 
         // 4. 关闭到期本金并扣减其计分（排名立即变化）
-        if (principalScore > 0) {
+        if (maturedCount > 0) {
             for (uint256 i = 0; i < count; i++) {
                 StakeRecord storage record = stakeRecords[msg.sender][i];
                 if (!record.active) continue;
@@ -383,6 +387,7 @@ contract NBTStakingBankV3 {
                 record.countedToReferrer = false;
             }
             user.activeStakeCount -= maturedCount;
+            // F09：即使到期本金计分为 0 也要扣减本金和活跃单数，避免旧单残留
             user.personalStakeVolume = _subOrZero(user.personalStakeVolume, principalScore);
             totalStaked = totalStaked >= principalAmount ? totalStaked - principalAmount : 0;
             _updateNodePosition(msg.sender);
@@ -476,6 +481,8 @@ contract NBTStakingBankV3 {
         Epoch storage ep = epochs[currentEpochId];
         if (ep.snapshotTime == 0) revert NoActiveEpoch();
         if (ep.settled) revert EpochAlreadySettled();
+        // F04：领取期开始后禁止追加注资，避免同档用户因领取先后拿到不同份额
+        if (!ep.disabled && _withinClaim(ep)) revert ClaimWindowStarted();
 
         uint256 beforeBalance = rewardToken.balanceOf(address(this));
         _safeTransferFrom(rewardToken, msg.sender, address(this), amount);
@@ -728,6 +735,11 @@ contract NBTStakingBankV3 {
         return _nodeIndexPlusOne[node];
     }
 
+    // F07：返回用户累计已领取的排名分红总额
+    function getRankClaimed(address user) external view returns (uint256) {
+        return rankClaimed[user];
+    }
+
     function getRankedNodeCount() external view returns (uint256) {
         return _nodes.length;
     }
@@ -850,6 +862,7 @@ contract NBTStakingBankV3 {
         ep.totalClaimed += share;
         totalRankDistributed += share;
         totalRankClaimed += share;
+        rankClaimed[node] += share;
 
         _safeTransfer(rewardToken, node, share);
         emit EpochRewardClaimed(epochId, node, rank, share);
@@ -961,7 +974,20 @@ contract NBTStakingBankV3 {
         uint256 counts = _groupCounts(totalNodes, tier);
         if (counts == 0) revert InvalidRank();
 
-        uint256 tierPool = pool * weights[tier] / activeWeight;
+        // F10：最后一个有效档承接档间余数（pool - 其余档按权重取整后的和），保证 100% 分完
+        uint256 lastTier = 3;
+        while (lastTier > 0 && weights[lastTier] == 0) lastTier--;
+        uint256 tierPool;
+        if (tier == lastTier) {
+            uint256 allocated;
+            for (uint256 i = 0; i < lastTier; i++) {
+                allocated += pool * weights[i] / activeWeight;
+            }
+            tierPool = pool - allocated;
+        } else {
+            tierPool = pool * weights[tier] / activeWeight;
+        }
+
         uint256 base = tierPool / counts;
         uint256 firstRank = _tierFirstRank(tier);
         uint256 lastRank = firstRank + counts - 1;
@@ -1013,9 +1039,9 @@ contract NBTStakingBankV3 {
         uint256 balance = rewardToken.balanceOf(address(this));
         // 预留项 1：未领取的邀请奖励（已锁定 + 已解锁未领）负债
         uint256 reserved = _pendingNodeRewards();
-        // 预留项 2：当前活跃期尚未领取的排名奖池（后续结算将结转）
+        // 预留项 2：当前活跃期尚未领取的排名奖池（含 disabled 合并期，后续结算将结转）
         Epoch storage activeEp = epochs[currentEpochId];
-        if (activeEp.snapshotTime > 0 && !activeEp.settled && !activeEp.disabled) {
+        if (activeEp.snapshotTime > 0 && !activeEp.settled) {
             reserved += activeEp.poolAmount - activeEp.totalClaimed;
         }
         // 预留项 3：待结转的上期未领取奖励
@@ -1058,11 +1084,12 @@ contract NBTStakingBankV3 {
 
     function _createsReferralCycle(address user, address referrer) internal view returns (bool) {
         address current = referrer;
-        for (uint256 i = 0; i < MAX_REFERRAL_DEPTH && current != address(0); i++) {
+        for (uint256 i = 0; i < MAX_REFERRAL_DEPTH + 1 && current != address(0); i++) {
             if (current == user) return true;
             current = userInfo[current].referrer;
         }
-        return false;
+        // F08：达到深度上限仍未到链尾 => 超出支持的推荐深度，一律按环路拒绝
+        return current != address(0);
     }
 
     function _unlockInviteRewards(address referrer) internal {

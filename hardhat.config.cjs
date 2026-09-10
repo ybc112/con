@@ -15,6 +15,7 @@ module.exports = {
   networks: {
     hardhat: {
       chainId: 31337,
+      accounts: { count: 30 },
     },
     bscTestnet: {
       url: process.env.BSC_TESTNET_RPC_URL || "https://data-seed-prebsc-1-s1.binance.org:8545/",

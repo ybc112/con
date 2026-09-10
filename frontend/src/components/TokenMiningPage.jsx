@@ -238,10 +238,6 @@ export default function TokenMiningPage({
       toast.error(t('cz.toast.compoundUnavailable'));
       return;
     }
-    if (activeRelease) {
-      toast.error(parseContractError({ reason: 'Monthly release in progress' }));
-      return;
-    }
     if (reinvestTotal <= 0) {
       toast.error(t('cz.toast.noRewardsToCompound'));
       return;
@@ -307,7 +303,8 @@ export default function TokenMiningPage({
     if (!(await ensureNetwork())) return;
     setIsClaimingRank(true);
     try {
-      const tx = await contracts.writeStakingBank.claimEpochReward({ ...feeTxOptions(), gasLimit: 3000000 });
+      // F05：ABI 有两个 claimEpochReward 重载，必须显式无参签名
+      const tx = await contracts.writeStakingBank['claimEpochReward()']({ ...feeTxOptions(), gasLimit: 3000000 });
       toast.loading('正在领取排名分红…', { id: 'claimRank' });
       await tx.wait();
       toast.success('排名分红领取成功', { id: 'claimRank' });
@@ -495,19 +492,19 @@ export default function TokenMiningPage({
             ) : (
               <button
                 onClick={handleStake}
-                disabled={isStaking || isCompounding || !account || !stakeAmount || activeRelease}
+                disabled={isStaking || isCompounding || !account || !stakeAmount}
                 className="w-full btn-premium disabled:opacity-50"
               >
-                <span>{activeRelease ? t('cz.node.monthlyAllocating') : isStaking ? t('cz.toast.staking') : t('cz.node.confirmStake')}</span>
+                <span>{isStaking ? t('cz.toast.staking') : t('cz.node.confirmStake')}</span>
               </button>
             )}
 
             <button
               onClick={handleCompoundAction}
-              disabled={!account || isApprovingFee || isApprovingStake || isCompounding || isClaiming || isStaking || activeRelease || !(reinvestTotal > 0) || !canCompoundRewards}
+              disabled={!account || isApprovingFee || isApprovingStake || isCompounding || isClaiming || isStaking || !(reinvestTotal > 0) || !canCompoundRewards}
               className="w-full btn-ghost border-[#FFB800]/50 bg-[#FFB800]/10 text-[#FFB800] hover:border-[#FFB800] hover:bg-[#FFB800]/20 hover:shadow-[0_0_30px_rgba(255,184,0,0.18)] disabled:opacity-50"
             >
-              {!canCompoundRewards ? t('cz.node.compoundUnavailable') : activeRelease ? t('cz.node.monthlyAllocating') : isCompounding ? t('cz.node.compounding') : !(reinvestTotal > 0) ? t('cz.node.compoundRewards') : `${t('cz.node.compoundRewards')} ${formatNumber(reinvestTotal, 4)} CON`}
+              {!canCompoundRewards ? t('cz.node.compoundUnavailable') : isCompounding ? t('cz.node.compounding') : !(reinvestTotal > 0) ? t('cz.node.compoundRewards') : `${t('cz.node.compoundRewards')} ${formatNumber(reinvestTotal, 4)} CON`}
             </button>
           </div>
         </motion.div>
@@ -604,10 +601,10 @@ export default function TokenMiningPage({
                 <div className="text-2xl font-bold text-[#FFB800]">{formatNumber(userInfo?.pendingRankRewards, 4)} CON</div>
                 <button
                   onClick={handleClaimRank}
-                  disabled={!account || isClaimingRank || isCompounding || isClaiming || activeRelease || !(parseFloat(userInfo?.pendingRankRewards || '0') > 0)}
+                  disabled={!account || isClaimingRank || isCompounding || isClaiming || !(parseFloat(userInfo?.pendingRankRewards || '0') > 0)}
                   className="mt-2 w-full px-3 py-1.5 rounded-lg bg-[#FFB800]/15 border border-[#FFB800]/30 text-[#FFB800] text-xs hover:bg-[#FFB800]/25 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  {activeRelease ? '结算中，暂不可领取' : isClaimingRank ? '领取中…' : '领取排名分红'}
+                  {isClaimingRank ? '领取中…' : '领取排名分红'}
                 </button>
               </div>
             </div>
@@ -693,10 +690,10 @@ export default function TokenMiningPage({
                   </div>
                   <button
                     onClick={() => needsFeeApproval ? approveFeeToken() : handleWithdraw(stake.stakeId)}
-                    disabled={withdrawingStakeId === stake.stakeId || activeRelease || !stake.isUnlocked}
+                    disabled={withdrawingStakeId === stake.stakeId || !stake.isUnlocked}
                     className="px-4 py-2 rounded-lg bg-white/10 text-white/75 hover:bg-white/15 disabled:opacity-50"
                   >
-                    {activeRelease ? t('cz.node.cannotWithdraw') : !stake.isUnlocked ? '待解锁' : withdrawingStakeId === stake.stakeId ? t('cz.node.withdrawing') : needsFeeApproval ? t('cz.node.approveFeeBeforeWithdraw') : t('cz.node.withdrawPrincipal')}
+                    {!stake.isUnlocked ? '待解锁' : withdrawingStakeId === stake.stakeId ? t('cz.node.withdrawing') : needsFeeApproval ? t('cz.node.approveFeeBeforeWithdraw') : t('cz.node.withdrawPrincipal')}
                   </button>
                 </div>
               ))

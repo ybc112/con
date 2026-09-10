@@ -143,6 +143,7 @@ export function useStakingBank(contract, account) {
       let stakes = null;          // null = 未成功读取（保留旧值）；[] = 成功但为空
       let pendingRewardAll = null; // null = 读取失败（保留旧值）
       let pendingRankRewards = null;
+      let rankClaimedVal = null;   // F07：用户累计已领排名分红
       let reinvestData = null;
       let referrals = null;       // null = 未成功读取（保留旧值）
       let referralsTotal = 0;
@@ -150,6 +151,8 @@ export function useStakingBank(contract, account) {
       if (account) {
         userInfo = await safeRead(() => contract.getUserInfo(account), null);
         pendingRewardAll = await safeRead(() => contract.pendingRewardAll(account), null);
+        // F07：用户累计已领取的排名分红（合约新增 getRankClaimed）
+        rankClaimedVal = await safeRead(() => contract.getRankClaimed(account), null);
         // V3：排名分红按期领取，当前期可领取金额作为待领取排名分红展示
         try {
           const epochId = Number(await contract.currentEpochId());
@@ -215,16 +218,21 @@ export function useStakingBank(contract, account) {
           directReferrals: Number(info.directReferrals ?? info[5]),
           referralStakeVolume: ethers.formatEther(info.referralStakeVolume ?? info[6]),
           personalStakeVolume: ethers.formatEther(info.personalStakeVolume ?? info[7] ?? 0n),
-          pendingInviteRewards: ethers.formatEther(info.pendingInviteRewards ?? info[8] ?? 0n),
+          // F06：待领展示用解锁视图（pendingRewardAll），与顶部提示口径一致
+          pendingInviteRewards: ethers.formatEther(userInfo.pendingRewards ?? userInfo[1] ?? 0n),
           totalInviteClaimed: ethers.formatEther(info.totalInviteClaimed ?? info[9] ?? 0n),
           pendingRankRewards: pendingRankRewards !== null
             ? ethers.formatEther(pendingRankRewards)
             : (prev.userInfo?.pendingRankRewards ?? '0'),
-          totalRankClaimed: '0',
+          // F07：累计已领排名分红读链上，不再硬编码 0
+          totalRankClaimed: rankClaimedVal !== null
+            ? ethers.formatEther(rankClaimedVal)
+            : (prev.userInfo?.totalRankClaimed ?? '0'),
           lockedInviteRewards: ethers.formatEther(info.lockedInviteRewards ?? info[10] ?? 0n),
           inviteUnlockCursor: Number(info.inviteUnlockCursor ?? info[11] ?? 0n),
           pendingRewards: ethers.formatEther(userInfo.pendingRewards ?? userInfo[1]),
-          totalClaimed: ethers.formatEther(userInfo.totalClaimed ?? userInfo[2]),
+          // F07：累计已领 = 邀请累计 + 排名分红累计
+          totalClaimed: ethers.formatEther((userInfo.totalClaimed ?? userInfo[2] ?? 0n) + (rankClaimedVal ?? 0n)),
           rank: Number(userInfo.rank ?? userInfo[3]),
         } : prev.userInfo,
         stakes: stakes !== null ? stakes : prev.stakes,

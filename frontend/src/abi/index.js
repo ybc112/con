@@ -58,6 +58,7 @@ export const STAKING_BANK_ABI = [
   "function getCurrentRelease() view returns (uint256 epochId, uint256 poolAmount, uint256 totalNodes, uint256 totalClaimed, uint256 claimStart, uint256 claimEnd, bool settled, bool disabled)",
   "function getEpoch(uint256 epochId) view returns (tuple(address node, uint256 personalScore, uint256 inviteScore, uint256 totalScore)[] nodes, uint256 snapshotTime, uint256 poolAmount, uint256 totalClaimed, uint256 totalNodes, bool settled, bool disabled)",
   "function pendingEpochReward(uint256 epochId, address node) view returns (uint256)",
+  "function getRankClaimed(address user) view returns (uint256)",
   "function getNodeRank(address node) view returns (uint256)",
   "function getRankedNodeCount() view returns (uint256)",
   "function getRankedNodes(uint256 offset, uint256 limit) view returns (address[] nodes, uint256[] scores, uint256 total)",

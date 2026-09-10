@@ -69,11 +69,13 @@ function App() {
       }
 
       try {
-        const owners = await Promise.all([
-          contracts.stakingBank?.owner().catch(() => null),
-          contracts.nbtToken?.owner().catch(() => null),
-        ]);
-        const isOwner = owners.some(owner => owner && owner.toLowerCase() === account.toLowerCase());
+        // F03：只按质押合约 owner / operators 判断管理权限。
+        // 代币合约（NBT_TOKEN_ABI）没有 owner 方法，调用会抛错中断整个检查，已移除。
+        let isOwner = false;
+        try {
+          const owner = await contracts.stakingBank?.owner();
+          isOwner = !!owner && owner.toLowerCase() === account.toLowerCase();
+        } catch { /* 读取失败按非 owner 处理 */ }
         // operator（管理员）同样具备管理权限：开期/注资/结算/暂停等 onlyAdmin 操作
         let isOperator = false;
         try {
