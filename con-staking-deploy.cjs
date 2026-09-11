@@ -111,14 +111,18 @@ async function step_config(wallet, state) {
 
 async function step_fund(wallet, state) {
   if (!state.stakingBank) throw new Error('尚未部署合约，先跑 deploy 步骤');
+  const { abi } = loadArtifact();
+  const bank = new ethers.Contract(state.stakingBank, abi, wallet);
   const con = new ethers.Contract(CONFIG.conToken, ERC20, wallet);
+  // 邀请奖励走独立储备入口（fundInvitePool），与排名奖池分离
+  await con.approve(state.stakingBank, ethers.MaxUint256, { gasLimit: 300000 });
   for (const batch of CONFIG.reserveBatchesCon) {
     const amt = ethers.parseEther(batch);
     const bal = await con.balanceOf(wallet.address);
     if (bal < amt) throw new Error('钱包 CON 不足：需要 ' + batch + ' CON，当前 ' + ethers.formatEther(bal));
-    const tx = await con['transfer'](state.stakingBank, amt, { gasLimit: 300000 });
+    const tx = await bank.fundInvitePool(amt, { gasLimit: 500000 });
     await tx.wait();
-    console.log('  已注入 ' + batch + ' CON → 合约，tx:', tx.hash);
+    console.log('  已注入邀请储备 ' + batch + ' CON，tx:', tx.hash);
     await new Promise((r) => setTimeout(r, 3000)); // 防连续交易限流
   }
   return state;

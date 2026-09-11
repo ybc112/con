@@ -176,7 +176,7 @@ const translations = {
         currentWallet: "当前钱包",
         totalStaked: "全网质押",
         nodeCount: "节点数",
-        claimableRewards: "待领取奖励",
+        claimableRewards: "累计未领邀请奖励",
         monthlyRelease: "结算周期",
         releasePlaceholder: "注资 CON 数量",
         rewardTopupAddress: "奖励充值地址",

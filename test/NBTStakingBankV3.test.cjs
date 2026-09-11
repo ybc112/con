@@ -17,8 +17,10 @@ async function deployFixture() {
   for (const u of [alice, bob, carol, dave, eve, frank, grace]) {
     await con.transfer(u.address, ethers.parseEther('1000000'));
   }
-  // 给质押合约 100 万储备（奖励池）
+  // 邀请奖励走独立储备入口（严重-1 修复）：先转币再 fundInvitePool 入账额度
   await con.transfer(bank.target, ethers.parseEther('1000000'));
+  await con.connect(owner).approve(bank.target, ethers.MaxUint256);
+  await bank.fundInvitePool(ethers.parseEther('1000000'));
   return { con, bank, owner, alice, bob, carol, dave, eve, frank, grace };
 }
 
@@ -788,6 +790,34 @@ describe('NBTStakingBankV3 合约逻辑测试', function () {
         sum2 += await bank.getRankRewardPreview(pool2, 101, r);
       }
       expect(sum2).to.equal(pool2);
+    });
+
+    it('严重-1：排名池注资不挤占邀请储备（独立 fundInvitePool）', async function () {
+      const { bank, con, owner, alice, bob } = await loadFixture(deployFixture);
+      const poolBefore = await bank.inviteRewardPool();
+      // 大额注资排名奖池
+      await bank.openEpoch();
+      await bank.fundEpoch(ethers.parseEther('500000'));
+      // 排名池注资后，邀请储备额度不变
+      expect(await bank.inviteRewardPool()).to.equal(poolBefore);
+      // 邀请奖励仍可正常发放（不被排名池挤占）
+      await stakeAs(bank, con, alice, ethers.parseEther('100'), bob.address);
+      expect((await bank.getUserInfo(bob.address)).info.lockedInviteRewards).to.equal(ethers.parseEther('100'));
+    });
+
+    it('严重-1：fundInvitePool 权限与额度扣减', async function () {
+      const { bank, con, owner, alice, bob } = await loadFixture(deployFixture);
+      // 非管理员不能注资
+      await con.connect(alice).approve(bank.target, ethers.MaxUint256);
+      await expect(bank.connect(alice).fundInvitePool(1)).to.be.revertedWithCustomError(bank, 'NotAdmin');
+      // 管理员注资：额度增加
+      const before = await bank.inviteRewardPool();
+      await bank.fundInvitePool(ethers.parseEther('500'));
+      expect(await bank.inviteRewardPool()).to.equal(before + ethers.parseEther('500'));
+      // 发放邀请奖励后额度扣减
+      await stakeAs(bank, con, alice, ethers.parseEther('100'), bob.address);
+      const afterQualify = await bank.inviteRewardPool();
+      expect(afterQualify).to.equal(before + ethers.parseEther('500') - ethers.parseEther('100'));
     });
   });
 });

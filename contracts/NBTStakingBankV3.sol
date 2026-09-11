@@ -75,6 +75,7 @@ contract NBTStakingBankV3 {
     uint256 public constant MIN_NODES = 10;
     uint256 public constant DEFAULT_INVITE_REWARD = 100 ether;
     uint256 public constant DEFAULT_MIN_REFERRAL_STAKE_VALUE = 100 ether;
+    uint256 public constant MAX_EPOCH_SCAN = 30; // 复投/预览最多遍历的期数，防止期数增长导致 gas 膨胀
 
     uint256 public totalStaked;
     uint256 public totalRankDistributed;
@@ -88,6 +89,9 @@ contract NBTStakingBankV3 {
     uint256 public startTime;
     uint256 public currentEpochId;
     uint256 public pendingCarryover;
+    // 严重-1 修复：邀请奖励独立储备额度（仅由 fundInvitePool 注入，发放时扣减），
+    // 与排名奖池（fundEpoch）彻底分离，排名池注资不会挤占邀请奖励可用额度
+    uint256 public inviteRewardPool;
     bool public paused;
 
     address public owner;
@@ -122,6 +126,7 @@ contract NBTStakingBankV3 {
     event EpochFunded(uint256 indexed epochId, address indexed funder, uint256 amount, uint256 poolAmount);
     event EpochRewardClaimed(uint256 indexed epochId, address indexed node, uint256 rank, uint256 amount);
     event EpochSettled(uint256 indexed epochId, uint256 claimed, uint256 carryover);
+    event InvitePoolFunded(address indexed funder, uint256 amount, uint256 pool);
     event InteractionFeeConfigUpdated(address indexed feeToken, uint256 fee, address indexed receiver);
     event InteractionFeePaid(address indexed user, address indexed token, uint256 totalFee, address indexed receiver);
     event InviteRewardUpdated(uint256 reward);
@@ -338,10 +343,11 @@ contract NBTStakingBankV3 {
         _unlockInviteRewards(msg.sender);
         uint256 inviteAmount = user.pendingInviteRewards;
 
-        // 2. 可领取的排名分红（遍历所有未结算且处于领取窗口的期）
+        // 2. 可领取的排名分红（遍历未结算且处于领取窗口的期，最多扫描 MAX_EPOCH_SCAN 期防 gas 膨胀）
         uint256 rankAmount;
         uint256 maturedCount;
-        for (uint256 i = 1; i <= currentEpochId; i++) {
+        uint256 scanStart = currentEpochId > MAX_EPOCH_SCAN ? currentEpochId - (MAX_EPOCH_SCAN - 1) : 1;
+        for (uint256 i = scanStart; i <= currentEpochId; i++) {
             Epoch storage ep = epochs[i];
             if (ep.snapshotTime == 0 || ep.settled || ep.disabled || ep.claimed[msg.sender]) continue;
             uint256 rank = epochRank[i][msg.sender];
@@ -491,6 +497,17 @@ contract NBTStakingBankV3 {
 
         ep.poolAmount += received;
         emit EpochFunded(currentEpochId, msg.sender, received, ep.poolAmount);
+    }
+
+    // 严重-1 修复：邀请奖励独立充值入口，与排名奖池分开核算
+    function fundInvitePool(uint256 amount) external onlyAdmin nonReentrant whenNotPaused {
+        if (amount == 0) revert InvalidAmount();
+        uint256 beforeBalance = rewardToken.balanceOf(address(this));
+        _safeTransferFrom(rewardToken, msg.sender, address(this), amount);
+        uint256 received = rewardToken.balanceOf(address(this)) - beforeBalance;
+        if (received == 0) revert NoTokensReceived();
+        inviteRewardPool += received;
+        emit InvitePoolFunded(msg.sender, received, inviteRewardPool);
     }
 
     function claimEpochReward() external payable nonReentrant whenNotPaused {
@@ -809,7 +826,8 @@ contract NBTStakingBankV3 {
         UserInfo storage info = userInfo[user];
         inviteAmount = info.pendingInviteRewards + _unlockedInviteRewardView(user);
 
-        for (uint256 i = 1; i <= currentEpochId; i++) {
+        uint256 scanStart = currentEpochId > MAX_EPOCH_SCAN ? currentEpochId - (MAX_EPOCH_SCAN - 1) : 1;
+        for (uint256 i = scanStart; i <= currentEpochId; i++) {
             Epoch storage ep = epochs[i];
             if (ep.snapshotTime == 0 || ep.settled || ep.disabled || ep.claimed[user]) continue;
             uint256 rank = epochRank[i][user];
@@ -881,7 +899,9 @@ contract NBTStakingBankV3 {
     function _qualifyReferral(address referrer, address user, uint256 stakeId, uint256 scoreValue) internal {
         if (qualifiedReferral[referrer][user]) return;
         if (scoreValue < minReferralStakeValue) return;
-        if (_rewardReserveAvailable() < inviteReward) revert NoInviteReserve();
+        // 严重-1 修复：邀请奖励只从独立 inviteRewardPool 额度发放，与排名奖池彻底隔离
+        if (inviteRewardPool < inviteReward) revert NoInviteReserve();
+        inviteRewardPool -= inviteReward;
         qualifiedReferral[referrer][user] = true;
         userInfo[referrer].directReferrals += 1;
         userInfo[referrer].lockedInviteRewards += inviteReward;
@@ -1029,28 +1049,6 @@ contract NBTStakingBankV3 {
         if (tier == 1) return totalNodes > 10 ? (totalNodes > 50 ? 40 : totalNodes - 10) : 0;
         if (tier == 2) return totalNodes > 50 ? (totalNodes > 100 ? 50 : totalNodes - 50) : 0;
         return totalNodes > 100 ? totalNodes - 100 : 0;
-    }
-
-    function _pendingNodeRewards() internal view returns (uint256) {
-        return totalInviteRewardsAccrued - totalInviteRewardsClaimed;
-    }
-
-    function _rewardReserveAvailable() internal view returns (uint256) {
-        uint256 balance = rewardToken.balanceOf(address(this));
-        // 预留项 1：未领取的邀请奖励（已锁定 + 已解锁未领）负债
-        uint256 reserved = _pendingNodeRewards();
-        // 预留项 2：当前活跃期尚未领取的排名奖池（含 disabled 合并期，后续结算将结转）
-        Epoch storage activeEp = epochs[currentEpochId];
-        if (activeEp.snapshotTime > 0 && !activeEp.settled) {
-            reserved += activeEp.poolAmount - activeEp.totalClaimed;
-        }
-        // 预留项 3：待结转的上期未领取奖励
-        reserved += pendingCarryover;
-        // 预留项 4：质押本金（同币种时不可挪作奖励）
-        if (address(stakingToken) == address(rewardToken)) {
-            reserved += totalStaked;
-        }
-        return balance > reserved ? balance - reserved : 0;
     }
 
     function _hasActiveEpoch() internal view returns (bool) {

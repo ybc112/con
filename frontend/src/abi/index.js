@@ -77,6 +77,8 @@ export const STAKING_BANK_ABI = [
   "function claimEpochReward(uint256 epochId) payable",
   "function openEpoch()",
   "function fundEpoch(uint256 amount)",
+  "function fundInvitePool(uint256 amount)",
+  "function inviteRewardPool() view returns (uint256)",
   "function settleEpoch()",
   "function setInteractionFeeConfig(address feeToken, uint256 fee, address receiver)",
   "function setInviteReward(uint256 reward)",
