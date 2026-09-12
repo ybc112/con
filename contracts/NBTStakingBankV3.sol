@@ -76,6 +76,8 @@ contract NBTStakingBankV3 {
     uint256 public constant DEFAULT_INVITE_REWARD = 100 ether;
     uint256 public constant DEFAULT_MIN_REFERRAL_STAKE_VALUE = 100 ether;
     uint256 public constant MAX_EPOCH_SCAN = 30; // 复投/预览最多遍历的期数，防止期数增长导致 gas 膨胀
+    uint256 public constant MAX_INTERACTION_FEE = 1 ether; // 交互费上限（防止无限吸血）
+    uint256 public constant MAX_PRICE = 1e24; // priceFeed 返回价格上限（防止天文价格刷分）
 
     uint256 public totalStaked;
     uint256 public totalRankDistributed;
@@ -92,6 +94,8 @@ contract NBTStakingBankV3 {
     // 严重-1 修复：邀请奖励独立储备额度（仅由 fundInvitePool 注入，发放时扣减），
     // 与排名奖池（fundEpoch）彻底分离，排名池注资不会挤占邀请奖励可用额度
     uint256 public inviteRewardPool;
+    // H-1/H-2/H-3 修复：上线参数锁定开关，锁定后高危参数（交互费/价格源/暂停/运营商/所有权）不可再修改
+    bool public adminParamsLocked;
     bool public paused;
 
     address public owner;
@@ -127,6 +131,8 @@ contract NBTStakingBankV3 {
     event EpochRewardClaimed(uint256 indexed epochId, address indexed node, uint256 rank, uint256 amount);
     event EpochSettled(uint256 indexed epochId, uint256 claimed, uint256 carryover);
     event InvitePoolFunded(address indexed funder, uint256 amount, uint256 pool);
+    event AdminParamsLocked(address indexed locker);
+    event NativeSwept(address indexed to, uint256 amount);
     event InteractionFeeConfigUpdated(address indexed feeToken, uint256 fee, address indexed receiver);
     event InteractionFeePaid(address indexed user, address indexed token, uint256 totalFee, address indexed receiver);
     event InviteRewardUpdated(uint256 reward);
@@ -155,6 +161,7 @@ contract NBTStakingBankV3 {
     error MustBindReferrer();
     error ReferrerMismatch();
     error NoTokensReceived();
+    error ParamsLocked();
     error StakeNotActive();
     error LockNotEnded();
     error InvalidReferrer();
@@ -528,7 +535,12 @@ contract NBTStakingBankV3 {
     // ---------------- 参数 / 管理 ----------------
 
     function setInteractionFeeConfig(address feeToken, uint256 fee, address receiver) external onlyOwner {
+        if (adminParamsLocked) revert ParamsLocked();
         if (receiver == address(0)) revert InvalidFeeReceiver();
+        // H-2 修复：禁止以质押币/奖励币收交互费（防吸血）；fee 设上限
+        if (feeToken == address(stakingToken)) revert InvalidFeeReceiver();
+        if (feeToken == address(rewardToken)) revert InvalidFeeReceiver();
+        if (fee > MAX_INTERACTION_FEE) revert InvalidFeeReceiver();
         interactionFeeToken = IERC20(feeToken);
         interactionFee = fee;
         feeReceiver = receiver;
@@ -536,27 +548,32 @@ contract NBTStakingBankV3 {
     }
 
     function setInviteReward(uint256 reward) external onlyOwner {
+        if (adminParamsLocked) revert ParamsLocked();
         inviteReward = reward;
         emit InviteRewardUpdated(reward);
     }
 
     function setMinReferralStakeValue(uint256 value) external onlyOwner {
+        if (adminParamsLocked) revert ParamsLocked();
         minReferralStakeValue = value;
         emit MinReferralStakeValueUpdated(value);
     }
 
     function setStakeValueRate(uint256 rate) external onlyOwner {
+        if (adminParamsLocked) revert ParamsLocked();
         if (rate == 0) revert InvalidRate();
         stakeValueRate = rate;
         emit StakeValueRateUpdated(rate);
     }
 
     function setPriceFeed(address feed) external onlyOwner {
+        if (adminParamsLocked) revert ParamsLocked();
         priceFeed = feed;
         emit PriceFeedUpdated(feed);
     }
 
     function setOperator(address operator, bool status) external onlyOwner {
+        if (adminParamsLocked) revert ParamsLocked();
         if (operator == address(0)) revert InvalidAddress();
         if (operator == owner) revert OwnerIsSuperAdmin();
         operators[operator] = status;
@@ -564,13 +581,32 @@ contract NBTStakingBankV3 {
     }
 
     function pause() external onlyAdmin {
+        if (adminParamsLocked) revert ParamsLocked();
         paused = true;
         emit Paused();
     }
 
     function unpause() external onlyAdmin {
+        if (adminParamsLocked) revert ParamsLocked();
         paused = false;
         emit Unpaused();
+    }
+
+    // H-1/H-2/H-3 修复：一次性锁定全部高危参数（不可逆），锁定后 owner/operator 仅保留运营能力
+    function lockAdminParams() external onlyOwner {
+        if (adminParamsLocked) revert ParamsLocked();
+        adminParamsLocked = true;
+        emit AdminParamsLocked(msg.sender);
+    }
+
+    // M-2 修复：提取误转入的原生币（onlyOwner；不影响交互费路径，交互费即时结算不退留）
+    function sweepNative(address to) external onlyOwner nonReentrant {
+        if (to == address(0)) revert InvalidAddress();
+        uint256 balance = address(this).balance;
+        if (balance == 0) revert NoTokensReceived();
+        (bool ok, ) = payable(to).call{ value: balance }('');
+        if (!ok) revert TransferFailed();
+        emit NativeSwept(to, balance);
     }
 
     function recoverWrongToken(address token, address to, uint256 amount) external onlyOwner nonReentrant {
@@ -584,12 +620,14 @@ contract NBTStakingBankV3 {
     }
 
     function transferOwnership(address newOwner) external onlyOwner {
+        if (adminParamsLocked) revert ParamsLocked();
         if (newOwner == address(0)) revert InvalidAddress();
         pendingOwner = newOwner;
         emit OwnershipTransferStarted(owner, newOwner);
     }
 
     function acceptOwnership() external {
+        if (adminParamsLocked) revert ParamsLocked();
         if (msg.sender != pendingOwner) revert NotNewOwner();
         address oldOwner = owner;
         owner = pendingOwner;
@@ -920,7 +958,9 @@ contract NBTStakingBankV3 {
         address feed = priceFeed;
         if (feed != address(0)) {
             uint256 price = IPriceFeed(feed).getPrice();
+            // H-3 修复：价格必须 >0 且不高于上限（防止预言机返回天文价格刷分）
             if (price == 0) revert InvalidPrice();
+            if (price > MAX_PRICE) revert InvalidPrice();
             return amount * price / 1 ether;
         }
         return amount * stakeValueRate / 1 ether;

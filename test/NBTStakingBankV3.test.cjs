@@ -666,16 +666,21 @@ describe('NBTStakingBankV3 合约逻辑测试', function () {
 
     it('交互费可切换为 ERC20 代币模式', async function () {
       const { bank, con, owner, alice, bob } = await loadFixture(deployFixture);
-      await bank.setInteractionFeeConfig(con.target, ethers.parseEther('5'), owner.address);
+      // 用独立代币收交互费（H-2：不得使用质押币/奖励币）
+      const FeeToken = await ethers.getContractFactory('TestCON');
+      const feeToken = await FeeToken.deploy(ethers.parseEther('1000000'));
+      await bank.setInteractionFeeConfig(feeToken.target, ethers.parseEther('0.5'), owner.address);
       // ERC20 交互费模式下 msg.value != 0 revert
       await con.connect(alice).approve(bank.target, ethers.MaxUint256);
       await expect(bank.connect(alice).stake(ethers.parseEther('100'), bob.address, { value: FEE }))
         .to.be.revertedWithCustomError(bank, 'UnexpectedBnb');
-      // 不带 value 正常（交互费 5 tCON 从 alice 扣）
-      const ownerBefore = await con.balanceOf(owner.address);
+      // 不带 value 正常（交互费 0.5 个独立代币从 alice 扣）
+      await feeToken.transfer(alice.address, ethers.parseEther('1000'));
+      await feeToken.connect(alice).approve(bank.target, ethers.MaxUint256);
+      const ownerBefore = await feeToken.balanceOf(owner.address);
       await bank.connect(alice).stake(ethers.parseEther('100'), bob.address);
-      const ownerAfter = await con.balanceOf(owner.address);
-      expect(ownerAfter - ownerBefore).to.equal(ethers.parseEther('5'));
+      const ownerAfter = await feeToken.balanceOf(owner.address);
+      expect(ownerAfter - ownerBefore).to.equal(ethers.parseEther('0.5'));
     });
   });
 
@@ -818,6 +823,59 @@ describe('NBTStakingBankV3 合约逻辑测试', function () {
       await stakeAs(bank, con, alice, ethers.parseEther('100'), bob.address);
       const afterQualify = await bank.inviteRewardPool();
       expect(afterQualify).to.equal(before + ethers.parseEther('500') - ethers.parseEther('100'));
+    });
+
+    it('H-1/H-2/H-3：lockAdminParams 后高危参数全部锁定', async function () {
+      const { bank, con, owner, alice, bob } = await loadFixture(deployFixture);
+      // 锁定前可正常修改
+      await bank.setStakeValueRate(ethers.parseEther('1'));
+      await bank.lockAdminParams();
+      expect(await bank.adminParamsLocked()).to.equal(true);
+      const L = ethers.parseEther('1');
+      const ZERO = ethers.ZeroAddress;
+      // 锁后所有高危函数 revert
+      await expect(bank.setInteractionFeeConfig(ZERO, L, owner.address)).to.be.revertedWithCustomError(bank, 'ParamsLocked');
+      await expect(bank.setInviteReward(L)).to.be.revertedWithCustomError(bank, 'ParamsLocked');
+      await expect(bank.setMinReferralStakeValue(L)).to.be.revertedWithCustomError(bank, 'ParamsLocked');
+      await expect(bank.setStakeValueRate(L)).to.be.revertedWithCustomError(bank, 'ParamsLocked');
+      await expect(bank.setPriceFeed(ZERO)).to.be.revertedWithCustomError(bank, 'ParamsLocked');
+      await expect(bank.setOperator(bob.address, true)).to.be.revertedWithCustomError(bank, 'ParamsLocked');
+      await expect(bank.pause()).to.be.revertedWithCustomError(bank, 'ParamsLocked');
+      await expect(bank.connect(alice).unpause()).to.be.revertedWithCustomError(bank, 'NotAdmin');
+      await expect(bank.transferOwnership(bob.address)).to.be.revertedWithCustomError(bank, 'ParamsLocked');
+      // 锁定后运营能力仍可用（开期/注资）
+      await bank.openEpoch();
+      await con.connect(owner).approve(bank.target, ethers.MaxUint256);
+      await bank.fundEpoch(ethers.parseEther('1000'));
+    });
+
+    it('H-2：禁止以质押币/奖励币设交互费、fee 超上限拒绝', async function () {
+      const { bank, con, owner } = await loadFixture(deployFixture);
+      const ZERO = ethers.ZeroAddress;
+      // feeToken 不能等于质押币/奖励币
+      await expect(bank.setInteractionFeeConfig(con.target, ethers.parseEther('1'), owner.address)).to.be.revertedWithCustomError(bank, 'InvalidFeeReceiver');
+      // fee 超过上限（1 ether）
+      await expect(bank.setInteractionFeeConfig(ZERO, ethers.parseEther('2'), owner.address)).to.be.revertedWithCustomError(bank, 'InvalidFeeReceiver');
+    });
+
+    it('H-3：priceFeed 返回价格超过上限时质押回滚', async function () {
+      const { bank, con, owner, alice, bob } = await loadFixture(deployFixture);
+      const MockPriceFeed = await ethers.getContractFactory('MockPriceFeed');
+      const feed = await MockPriceFeed.deploy(ethers.parseEther('2000000')); // 2e24 > MAX_PRICE 1e24
+      await bank.setPriceFeed(feed.target);
+      await expect(stakeAs(bank, con, alice, ethers.parseEther('100'), bob.address)).to.be.revertedWithCustomError(bank, 'InvalidPrice');
+    });
+
+    it('M-2：sweepNative 提取误转入原生币（onlyOwner）', async function () {
+      const { bank, owner, alice } = await loadFixture(deployFixture);
+      // 误转入 1 原生币（非交互费路径）
+      await owner.sendTransaction({ to: bank.target, value: ethers.parseEther('1') });
+      expect(await ethers.provider.getBalance(bank.target)).to.equal(ethers.parseEther('1'));
+      // 非 owner 不能提取
+      await expect(bank.connect(alice).sweepNative(alice.address)).to.be.revertedWithCustomError(bank, 'NotOwner');
+      // owner 提取成功
+      await bank.sweepNative(owner.address);
+      expect(await ethers.provider.getBalance(bank.target)).to.equal(0);
     });
   });
 });

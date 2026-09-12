@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
 import { FiAward, FiCopy, FiPause, FiPlay, FiSettings, FiShield, FiUploadCloud, FiUserPlus } from 'react-icons/fi';
@@ -12,6 +12,36 @@ export default function AdminPage({ account, contracts, stakingData, onRefresh }
   const [stakeValueRate, setStakeValueRate] = useState('');
   const [operatorAddr, setOperatorAddr] = useState('');
   const [isWorking, setIsWorking] = useState(false);
+  const [lockedParams, setLockedParams] = useState(false);
+
+  // 读取参数锁定状态（锁后交互费/价格源/暂停/运营商/所有权全部不可再改）
+  useEffect(() => {
+    let cancelled = false;
+    if (contracts?.stakingBank) {
+      contracts.stakingBank.adminParamsLocked()
+        .then((v) => { if (!cancelled) setLockedParams(!!v); })
+        .catch(() => {});
+    }
+    return () => { cancelled = true; };
+  }, [contracts?.stakingBank, stakingData?.loading]);
+
+  const lockParams = async () => {
+    if (!isReady) return;
+    if (!window.confirm('锁定后交互费、价格源、暂停、管理员、所有权等参数将永久不可修改（不可逆）。确认锁定？')) return;
+    setIsWorking(true);
+    try {
+      const tx = await contracts.writeStakingBank.lockAdminParams();
+      toast.loading(t('cz.toast.openRelease'), { id: 'lockParams' });
+      await tx.wait();
+      toast.success('参数已锁定', { id: 'lockParams' });
+      setLockedParams(true);
+      onRefresh?.();
+    } catch (err) {
+      toast.error(parseContractError(err), { id: 'lockParams' });
+    } finally {
+      setIsWorking(false);
+    }
+  };
 
   const owner = null;
   const isReady = account && contracts?.writeStakingBank;
@@ -281,16 +311,38 @@ export default function AdminPage({ account, contracts, stakingData, onRefresh }
         </div>
       </section>
 
+      {/* 参数安全锁定：一次性锁死全部高危参数，不可逆 */}
+      <section className="glass-premium p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-l-4 border-l-[#FFB800]/70">
+        <div>
+          <h2 className="text-lg font-bold text-white flex items-center gap-2">
+            <FiShield className="text-[#FFB800]" />
+            {lockedParams ? '参数已锁定（安全模式）' : '锁定全部参数（关闭高级管理）'}
+          </h2>
+          <p className="text-white/45 text-sm">
+            {lockedParams
+              ? '交互费、价格源、暂停、管理员、所有权等参数已永久冻结，不可再修改。'
+              : '锁死后交互费、价格源、暂停、管理员、所有权等参数将永久不可修改（不可逆），owner 仅保留开期/注资/结算运营能力。'}
+          </p>
+        </div>
+        <button
+          onClick={lockParams}
+          disabled={isWorking || lockedParams}
+          className="px-4 py-2 rounded-lg bg-[#FFB800]/20 text-[#FFB800] disabled:opacity-40 flex items-center gap-2"
+        >
+          <FiShield /> {lockedParams ? '已锁定' : '立即锁定'}
+        </button>
+      </section>
+
       <section className="glass-premium p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-bold text-white">{t('cz.admin.pauseTitle')}</h2>
           <p className="text-white/45 text-sm">{t('cz.admin.pauseDesc')}</p>
         </div>
         <div className="flex gap-3">
-          <button onClick={() => setPaused(true)} disabled={isWorking || stakingData?.isPaused} className="px-4 py-2 rounded-lg bg-[#FFB800]/20 text-[#FFB800] disabled:opacity-50 flex items-center gap-2">
+          <button onClick={() => setPaused(true)} disabled={isWorking || stakingData?.isPaused || lockedParams} className="px-4 py-2 rounded-lg bg-[#FFB800]/20 text-[#FFB800] disabled:opacity-50 flex items-center gap-2">
             <FiPause /> {t('cz.admin.pause')}
           </button>
-          <button onClick={() => setPaused(false)} disabled={isWorking || !stakingData?.isPaused} className="px-4 py-2 rounded-lg bg-[#38BDF8]/20 text-[#38BDF8] disabled:opacity-50 flex items-center gap-2">
+          <button onClick={() => setPaused(false)} disabled={isWorking || !stakingData?.isPaused || lockedParams} className="px-4 py-2 rounded-lg bg-[#38BDF8]/20 text-[#38BDF8] disabled:opacity-50 flex items-center gap-2">
             <FiPlay /> {t('cz.admin.resume')}
           </button>
         </div>
