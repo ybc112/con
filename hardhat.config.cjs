@@ -9,6 +9,9 @@ module.exports = {
       optimizer: {
         enabled: true,
         runs: 1,
+        details: {
+          yul: true,
+        },
       },
     },
   },

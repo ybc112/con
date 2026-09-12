@@ -63,8 +63,9 @@ describe('NBTStakingBankV3 合约逻辑测试', function () {
       expect(await bank.inviteReward()).to.equal(ethers.parseEther('100'));
       expect(await bank.minReferralStakeValue()).to.equal(ethers.parseEther('100'));
       expect(await bank.stakeValueRate()).to.equal(ethers.parseEther('1'));
-      expect(await bank.interactionFee()).to.equal(FEE);
-      expect(await bank.feeReceiver()).to.equal(owner.address);
+      const feeCfg = await bank.getInteractionFeeConfig();
+      expect(feeCfg.fee).to.equal(FEE);
+      expect(feeCfg.receiverA).to.equal(owner.address);
       expect(await bank.paused()).to.equal(false);
       expect(await bank.getRankedNodeCount()).to.equal(0);
     });
@@ -122,7 +123,7 @@ describe('NBTStakingBankV3 合约逻辑测试', function () {
       const info = await bank.getUserInfo(alice.address);
       expect(info.info.personalStakeVolume).to.equal(ethers.parseEther('500'));
       expect(info.info.activeStakeCount).to.equal(1);
-      expect(await bank.totalStaked()).to.equal(ethers.parseEther('500'));
+      expect((await bank.getMiningStatus())._totalStaked).to.equal(ethers.parseEther('500'));
     });
 
     it('交互费（BNB）收取给 feeReceiver，多付的部分退还', async function () {
@@ -244,7 +245,7 @@ describe('NBTStakingBankV3 合约逻辑测试', function () {
         .to.be.revertedWithCustomError(bank, 'NoInviteReserve');
       // 整笔回滚：合约余额和 totalStaked 都为 0
       expect(await con.balanceOf(bank.target)).to.equal(0);
-      expect(await bank.totalStaked()).to.equal(0);
+      expect((await bank.getMiningStatus())._totalStaked).to.equal(0);
     });
 
     it('15 天后邀请奖励解锁，可领取（claimNodeRewards）', async function () {
@@ -365,9 +366,9 @@ describe('NBTStakingBankV3 合约逻辑测试', function () {
       // 注资
       await con.connect(owner).approve(bank.target, ethers.MaxUint256);
       await bank.fundEpoch(ethers.parseEther('1000'));
-      // disabled 期可直接结算，未领全部结转
+      // disabled 期可直接结算，未领全部结转（通过下期 openEpoch 的 EpochOpened 事件验证 carryover=1000）
       await bank.settleEpoch();
-      expect(await bank.pendingCarryover()).to.equal(ethers.parseEther('1000'));
+      await expect(bank.openEpoch()).to.emit(bank, 'EpochOpened').withArgs(2, 2, ethers.parseEther('1000'), true);
     });
 
     it('openEpoch 快照当前节点；新质押不会影响已开期的快照', async function () {
@@ -418,13 +419,10 @@ describe('NBTStakingBankV3 合约逻辑测试', function () {
       await bank.fundEpoch(ethers.parseEther('1000'));
       await advance(DAYS(3) + 1);
       // 10 用户 + referrer 共 11 节点 => ≤50 档：前 10 名拿 50% 平分，每人 500/10 = 50
-      const preview = await bank.pendingEpochReward(1, users[0].address);
-      expect(preview).to.equal(ethers.parseEther('50'));
       const before = await con.balanceOf(users[0].address);
       await bank.connect(users[0])['claimEpochReward()']({ value: FEE });
       const after = await con.balanceOf(users[0].address);
       expect(after - before).to.equal(ethers.parseEther('50'));
-      expect(await bank.hasClaimed(1, users[0].address)).to.equal(true);
       await expect(bank.connect(users[0])['claimEpochReward()']({ value: FEE }))
         .to.be.revertedWithCustomError(bank, 'AlreadyClaimed');
     });
@@ -437,12 +435,10 @@ describe('NBTStakingBankV3 合约逻辑测试', function () {
       await bank.fundEpoch(ethers.parseEther('1000'));
       await advance(DAYS(11)); // 领取期结束
       await bank.settleEpoch();
-      expect(await bank.pendingCarryover()).to.equal(ethers.parseEther('1000'));
-      // 下一期 openEpoch 自动带入
+      // 下一期 openEpoch 自动带入 carryover（EpochOpened 事件 carryover=1000，且池子含 1000）
       await bank.openEpoch();
       const ep2 = await bank.getEpoch(2);
       expect(ep2.poolAmount).to.equal(ethers.parseEther('1000'));
-      expect(await bank.pendingCarryover()).to.equal(0);
     });
 
     it('claim 期未结束不能结算（ClaimPeriodNotEnded）', async function () {
@@ -661,7 +657,6 @@ describe('NBTStakingBankV3 合约逻辑测试', function () {
       // pendingOwner（alice）可以接受
       await bank.connect(alice).acceptOwnership();
       expect(await bank.owner()).to.equal(alice.address);
-      expect(await bank.pendingOwner()).to.equal(ZERO);
     });
 
     it('交互费可切换为 ERC20 代币模式', async function () {
@@ -775,7 +770,7 @@ describe('NBTStakingBankV3 合约逻辑测试', function () {
       // 旧单关闭，totalStaked 只有新单 1 wei，不翻倍
       const st0b = await bank.getStakeRecord(alice.address, 0);
       expect(st0b.active).to.equal(false);
-      expect(await bank.totalStaked()).to.equal(1n);
+      expect((await bank.getMiningStatus())._totalStaked).to.equal(1n);
       const info = await bank.getUserInfo(alice.address);
       expect(info.info.activeStakeCount).to.equal(1);
     });
@@ -799,13 +794,10 @@ describe('NBTStakingBankV3 合约逻辑测试', function () {
 
     it('严重-1：排名池注资不挤占邀请储备（独立 fundInvitePool）', async function () {
       const { bank, con, owner, alice, bob } = await loadFixture(deployFixture);
-      const poolBefore = await bank.inviteRewardPool();
       // 大额注资排名奖池
       await bank.openEpoch();
       await bank.fundEpoch(ethers.parseEther('500000'));
-      // 排名池注资后，邀请储备额度不变
-      expect(await bank.inviteRewardPool()).to.equal(poolBefore);
-      // 邀请奖励仍可正常发放（不被排名池挤占）
+      // 排名池注资后邀请奖励仍可正常发放（不被排名池挤占）
       await stakeAs(bank, con, alice, ethers.parseEther('100'), bob.address);
       expect((await bank.getUserInfo(bob.address)).info.lockedInviteRewards).to.equal(ethers.parseEther('100'));
     });
@@ -815,14 +807,15 @@ describe('NBTStakingBankV3 合约逻辑测试', function () {
       // 非管理员不能注资
       await con.connect(alice).approve(bank.target, ethers.MaxUint256);
       await expect(bank.connect(alice).fundInvitePool(1)).to.be.revertedWithCustomError(bank, 'NotAdmin');
-      // 管理员注资：额度增加
-      const before = await bank.inviteRewardPool();
-      await bank.fundInvitePool(ethers.parseEther('500'));
-      expect(await bank.inviteRewardPool()).to.equal(before + ethers.parseEther('500'));
-      // 发放邀请奖励后额度扣减
+      // 管理员注资：额度增加（InvitePoolFunded 事件带新额度）
+      await expect(bank.fundInvitePool(ethers.parseEther('500')))
+        .to.emit(bank, 'InvitePoolFunded')
+        .withArgs(owner.address, ethers.parseEther('500'), ethers.parseEther('1000500'));
+      // 发放邀请奖励后额度扣减（扣 100：1000500 - 100 = 1000400，再注入 100 → 1000500）
       await stakeAs(bank, con, alice, ethers.parseEther('100'), bob.address);
-      const afterQualify = await bank.inviteRewardPool();
-      expect(afterQualify).to.equal(before + ethers.parseEther('500') - ethers.parseEther('100'));
+      await expect(bank.fundInvitePool(ethers.parseEther('100')))
+        .to.emit(bank, 'InvitePoolFunded')
+        .withArgs(owner.address, ethers.parseEther('100'), ethers.parseEther('1000500'));
     });
 
     it('H-1/H-2/H-3：lockAdminParams 后高危参数全部锁定', async function () {

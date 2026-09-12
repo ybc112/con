@@ -33,7 +33,7 @@ const path = require('path');
 
 // ---------------- 配置区（上线前请逐项核对） ----------------
 const CONFIG = {
-  rpc: 'https://bsc-rpc.publicnode.com',
+  rpc: 'https://rpc-bsc.48.club',
   chainId: 56,
   conToken: '0x66A585556138EbBb44Da0fF1324C796C44eb5ED1',
   // 交互费收币地址 —— 注意：请改成你自己的新收币钱包（现在是占位沿用 CZ 项目的地址）

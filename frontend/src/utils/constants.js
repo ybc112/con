@@ -1,8 +1,8 @@
 const MAINNET_CONTRACTS = {
   // CON 质押项目：质押币/奖励币 = CON（新代币）
   NBT_TOKEN: '0x66A585556138EbBb44Da0fF1324C796C44eb5ED1',
-  // 质押合约地址：部署脚本 con-staking-deploy.cjs 部署后回填（占位为 0x0，部署前页面只读）
-  STAKING_BANK: '0x0000000000000000000000000000000000000000',
+  // 质押合约地址：BSC 主网 2026-09-13 部署（tx 0x45459f346940a53a69959ba7d88efd00ef0dcb5c5b03ac929163d85d18751e9d）
+  STAKING_BANK: '0x0B3943E0851341164D859DB56B6502c786EC8000',
   FEE_TOKEN: '',
 };
 
@@ -13,8 +13,8 @@ const STALE_TESTNET_ADDRESSES = new Set([
   '0xc84a22989be328e2caab41f1fe6bc8ed78004d04',
 ]);
 
-// ============ 临时测试模式：强制 Sepolia 测试网（Vercel 控制台环境变量会覆盖 vercel.json，故代码层强制；测完把 TEST_MODE 改为 false 即切回主网）============
-const TEST_MODE = true;
+// ============ 临时测试模式：true=强制 Sepolia 测试网 / false=BSC 主网（2026-09-13 主网合约已部署，切回 false）============
+const TEST_MODE = false;
 const TEST_NBT_TOKEN = '0x9868386Cf6175fE560eACaDaB71ce44BFE308fE7';   // Sepolia tCON
 const TEST_STAKING_BANK = '0x7e4DBfF0d6d4AE36cA8f2F16c4B06E42C02D001d'; // Sepolia 质押合约（修复版）
 // 当前链由 VITE_CHAIN_ID 决定：0x38 主网 / 0x61 测试网 / 0xaa36a7 Sepolia，默认主网

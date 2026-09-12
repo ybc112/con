@@ -64,7 +64,7 @@ contract NBTStakingBankV3 {
 
     IERC20 public immutable stakingToken;
     IERC20 public immutable rewardToken;
-    IERC20 public interactionFeeToken;
+    IERC20 internal interactionFeeToken;
 
     uint256 public constant RATE_BASE = 10_000;
     uint256 public constant MAX_ACTIVE_STAKES = 50;
@@ -79,39 +79,39 @@ contract NBTStakingBankV3 {
     uint256 public constant MAX_INTERACTION_FEE = 1 ether; // 交互费上限（防止无限吸血）
     uint256 public constant MAX_PRICE = 1e24; // priceFeed 返回价格上限（防止天文价格刷分）
 
-    uint256 public totalStaked;
-    uint256 public totalRankDistributed;
-    uint256 public totalRankClaimed;
-    uint256 public totalInviteRewardsAccrued;
-    uint256 public totalInviteRewardsClaimed;
-    uint256 public interactionFee;
+    uint256 internal totalStaked;
+    uint256 internal totalRankDistributed;
+    uint256 internal totalRankClaimed;
+    uint256 internal totalInviteRewardsAccrued;
+    uint256 internal totalInviteRewardsClaimed;
+    uint256 internal interactionFee;
     uint256 public inviteReward;
     uint256 public minReferralStakeValue;
     uint256 public stakeValueRate;
-    uint256 public startTime;
+    uint256 internal startTime;
     uint256 public currentEpochId;
-    uint256 public pendingCarryover;
+    uint256 internal pendingCarryover;
     // 严重-1 修复：邀请奖励独立储备额度（仅由 fundInvitePool 注入，发放时扣减），
     // 与排名奖池（fundEpoch）彻底分离，排名池注资不会挤占邀请奖励可用额度
-    uint256 public inviteRewardPool;
+    uint256 internal inviteRewardPool;
     // H-1/H-2/H-3 修复：上线参数锁定开关，锁定后高危参数（交互费/价格源/暂停/运营商/所有权）不可再修改
     bool public adminParamsLocked;
     bool public paused;
 
     address public owner;
-    address public pendingOwner;
-    address public feeReceiver;
-    address public priceFeed;
+    address internal pendingOwner;
+    address internal feeReceiver;
+    address internal priceFeed;
     uint256 private _unlocked = 1;
 
-    mapping(address => UserInfo) public userInfo;
-    mapping(address => mapping(uint256 => StakeRecord)) public stakeRecords;
+    mapping(address => UserInfo) internal userInfo;
+    mapping(address => mapping(uint256 => StakeRecord)) internal stakeRecords;
     mapping(address => bool) public operators;
     mapping(address => address[]) private _referrals;
     mapping(address => InviteRewardLock[]) private _inviteRewardLocks;
     mapping(address => mapping(address => bool)) public qualifiedReferral;
     mapping(uint256 => Epoch) private epochs;
-    mapping(uint256 => mapping(address => uint256)) public epochRank;
+    mapping(uint256 => mapping(address => uint256)) internal epochRank;
 
     address[] private _nodes;
     mapping(address => uint256) private _nodeIndexPlusOne;
@@ -777,15 +777,6 @@ contract NBTStakingBankV3 {
         return (ep.nodes, ep.snapshotTime, ep.poolAmount, ep.totalClaimed, ep.totalNodes, ep.settled, ep.disabled);
     }
 
-    function pendingEpochReward(uint256 epochId, address node) external view returns (uint256) {
-        Epoch storage ep = epochs[epochId];
-        if (ep.snapshotTime == 0 || ep.settled || ep.disabled || ep.claimed[node]) return 0;
-        uint256 rank = epochRank[epochId][node];
-        if (rank == 0 || rank > ep.totalNodes) return 0;
-        if (!_withinClaim(ep)) return 0;
-        return _rankShare(ep.poolAmount, ep.totalNodes, rank);
-    }
-
     function getNodeRank(address node) public view returns (uint256) {
         return _nodeIndexPlusOne[node];
     }
@@ -824,10 +815,6 @@ contract NBTStakingBankV3 {
         return _rankShare(amount, totalNodes, rank);
     }
 
-    function getReferrals(address user) external view returns (address[] memory) {
-        return _referrals[user];
-    }
-
     function getReferralsPaginated(address user, uint256 offset, uint256 limit) external view returns (
         address[] memory result,
         uint256 total
@@ -847,10 +834,6 @@ contract NBTStakingBankV3 {
 
     function hasReferrer(address user) external view returns (bool) {
         return userInfo[user].referrer != address(0);
-    }
-
-    function hasClaimed(uint256 epochId, address node) external view returns (bool) {
-        return epochs[epochId].claimed[node];
     }
 
     // 复投预览：返回可复投的邀请奖励、排名分红、到期本金及其合计
