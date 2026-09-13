@@ -3,7 +3,6 @@
   "outputDirectory": "frontend/dist",
   "installCommand": "cd frontend && npm install",
   "framework": "vite",
-  "comment": "合约地址与链 ID 已写死在 frontend/src/utils/constants.js，不通过环境变量注入，避免构建环境把线上切到测试网",
   "routes": [
     { "handle": "filesystem" },
     { "src": "/(.*)", "dest": "/index.html" }
