@@ -36,8 +36,8 @@ const CONFIG = {
   rpc: 'https://rpc-bsc.48.club',
   chainId: 56,
   conToken: '0x66A585556138EbBb44Da0fF1324C796C44eb5ED1',
-  // 交互费收币地址 —— 注意：请改成你自己的新收币钱包（现在是占位沿用 CZ 项目的地址）
-  feeReceiver: '0x5A378b61193ac2ce07cE816893C080804504a2f0',
+  // 交互费收币地址（BSC 主网已更新为正式钱包）
+  feeReceiver: '0x500F34Dd13c01E5277E0A2AF933eA83BDE51BC88',
   interactionFeeBnb: '0.00065118',          // 每笔交互费（BNB）
   inviteRewardCon: '100',                   // 邀请奖励 CON/人
   minReferralStakeValueU: '100',            // 邀请达标门槛（U）
