@@ -73,7 +73,7 @@ async function getWallet() {
 
 const ERC20 = ['function balanceOf(address) view returns (uint256)', 'function approve(address,uint256) returns (bool)', 'function allowance(address,address) view returns (uint256)', 'function transfer(address,uint256) returns (bool)'];
 const ROUTER = ['function addLiquidityETH(address,uint256,uint256,uint256,address,uint256) payable returns (uint256,uint256,uint256)'];
-const BANK_VIEW = ['function stakingToken() view returns (address)', 'function rewardToken() view returns (address)', 'function feeReceiver() view returns (address)', 'function interactionFee() view returns (uint256)', 'function inviteReward() view returns (uint256)', 'function minReferralStakeValue() view returns (uint256)', 'function stakeValueRate() view returns (uint256)', 'function totalStaked() view returns (uint256)', 'function currentEpochId() view returns (uint256)'];
+const BANK_VIEW = ['function stakingToken() view returns (address)', 'function rewardToken() view returns (address)', 'function getInteractionFeeConfig() view returns (address,uint256,address,address)', 'function inviteReward() view returns (uint256)', 'function minReferralStakeValue() view returns (uint256)', 'function stakeValueRate() view returns (uint256)', 'function currentEpochId() view returns (uint256)'];
 
 async function step_deploy(wallet, state) {
   if (state.stakingBank) { console.log('已存在合约地址:', state.stakingBank, '（跳过部署，如需重来请删除输出文件）'); return state; }
@@ -183,12 +183,11 @@ async function step_status(wallet) {
     console.log('  合约 CON 余额:', ethers.formatEther(await con.balanceOf(state.stakingBank)));
     console.log('  stakingToken:', await bank.stakingToken());
     console.log('  rewardToken:', await bank.rewardToken());
-    console.log('  feeReceiver:', await bank.feeReceiver());
-    console.log('  interactionFee:', ethers.formatEther(await bank.interactionFee()), 'BNB');
+    const feeCfg = await bank.getInteractionFeeConfig();
+    console.log('  交互费配置 → token:', feeCfg[0], '| fee:', ethers.formatEther(feeCfg[1]), 'BNB | receiver:', feeCfg[2]);
     console.log('  inviteReward:', ethers.formatEther(await bank.inviteReward()), 'CON');
     console.log('  minReferralStakeValue:', ethers.formatEther(await bank.minReferralStakeValue()), 'U');
     console.log('  stakeValueRate:', ethers.formatEther(await bank.stakeValueRate()), '(1 CON = N U)');
-    console.log('  totalStaked:', ethers.formatEther(await bank.totalStaked()));
     console.log('  currentEpochId:', (await bank.currentEpochId()).toString());
   } else {
     console.log('质押合约: 尚未部署');
