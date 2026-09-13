@@ -94,6 +94,7 @@ const translations = {
         mechanism2: "邀请一个有效质押（满 100U 价值）奖励 100 CON。每 15 天一个结算周期：开期快照榜单、注入奖池，按排名四档权重 100% 分给全部节点。",
         mechanism3: "排名越高，拿得越多。项目方不留一分：当期奖池注入多少、分配多少，未领完的自动结转下一期。",
         monthlyTitle: "每期排名分红",
+        tierDesc: "当前节点数",
       },
       node: {
         bandTop10: "前 10 名",
@@ -753,6 +754,7 @@ const translations = {
         mechanism2: "Each qualified invited stake (100U+ value) rewards 100 CON. Every 15-day settlement cycle snapshots the leaderboard, injects the prize pool, and distributes 100% to all nodes by four tiers.",
         mechanism3: "The higher the rank, the more you earn. The project keeps nothing: whatever is injected is distributed, and unclaimed rewards roll into the next cycle.",
         monthlyTitle: "Per-Cycle Rank Dividends",
+        tierDesc: "Current Nodes",
       },
       node: {
         bandTop10: "Top 10",

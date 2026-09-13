@@ -15,31 +15,18 @@ export default function HomePage({ onPageChange, stakingData }) {
   ];
   const isLoading = stakingData?.loading !== false;
 
-  // 分红档位与合约 _bucketWeights 一致，按当前节点数动态显示
+  // 每期排名分红固定四档：前10名 50% / 11-50名 30% / 51-100名 15% / 100名以后 5%
   const bands = useMemo(() => {
     const n = Number(miningStatus?.rankedNodeCount ?? 0);
-    if (n === 0 || n <= 10) {
-      return [{ rank: t('cz.home.bandTop10'), share: '100%', note: t('cz.home.noteCore') }];
-    }
-    if (n <= 50) {
-      return [
-        { rank: t('cz.home.bandTop10'), share: '50%', note: t('cz.home.noteCore') },
-        { rank: t('cz.home.band11To50'), share: '50%', note: t('cz.home.noteClimb') },
-      ];
-    }
-    if (n <= 100) {
-      return [
+    return {
+      nodeCount: n,
+      bands: [
         { rank: t('cz.home.bandTop10'), share: '50%', note: t('cz.home.noteCore') },
         { rank: t('cz.home.band11To50'), share: '30%', note: t('cz.home.noteClimb') },
-        { rank: t('cz.home.band51To100'), share: '20%', note: t('cz.home.noteGrowth') },
-      ];
-    }
-    return [
-      { rank: t('cz.home.bandTop10'), share: '50%', note: t('cz.home.noteCore') },
-      { rank: t('cz.home.band11To50'), share: '30%', note: t('cz.home.noteClimb') },
-      { rank: t('cz.home.band51To100'), share: '15%', note: t('cz.home.noteGrowth') },
-      { rank: t('cz.home.bandAfter100'), share: '5%', note: t('cz.home.noteUniversal') },
-    ];
+        { rank: t('cz.home.band51To100'), share: '15%', note: t('cz.home.noteGrowth') },
+        { rank: t('cz.home.bandAfter100'), share: '5%', note: t('cz.home.noteUniversal') },
+      ],
+    };
   }, [miningStatus?.rankedNodeCount, t]);
 
   return (
@@ -138,20 +125,25 @@ export default function HomePage({ onPageChange, stakingData }) {
         </div>
 
         <div className="glass-premium p-5 md:p-6">
-          <h2 className="text-xl sm:text-2xl font-bold text-white mb-4 sm:mb-5 flex items-center gap-3">
+          <h2 className="text-xl sm:text-2xl font-bold text-white mb-2 sm:mb-3 flex items-center gap-3">
             <FiAward className="text-[#38BDF8]" />
             {t('cz.home.monthlyTitle')}
           </h2>
+          <p className="text-white/40 text-sm mb-4 sm:mb-5">
+            {t('cz.home.tierDesc')} <span className="text-[#38BDF8] font-semibold">{formatNumber(bands.nodeCount, 0)}</span>
+          </p>
           <div className="grid sm:grid-cols-2 gap-4">
-            {bands.map((band, index) => (
+            {bands.bands.map((band, index) => (
               <motion.div
                 key={band.rank}
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: 0.15 + index * 0.08 }}
-                className="p-5 rounded-xl bg-white/5 border border-white/10"
+                className={`p-5 rounded-xl border bg-white/5 border-white/10`}
               >
-                <div className="text-white/50 text-sm">{band.rank}</div>
+                <div className="text-white/50 text-sm flex items-center gap-2">
+                  {band.rank}
+                </div>
                 <div className="text-4xl font-bold text-gradient-gold my-2">{band.share}</div>
                 <div className="text-white/35 text-sm">{band.note}</div>
               </motion.div>
