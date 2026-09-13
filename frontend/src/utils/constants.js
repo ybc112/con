@@ -1,56 +1,17 @@
-const MAINNET_CONTRACTS = {
-  // CON 质押项目：质押币/奖励币 = CON（新代币）
+// ============ BSC 主网配置（唯一配置源）============
+// 地址在此写死，不读 .env / Vercel 环境变量：历史上构建环境曾把线上切到 Sepolia 测试网，
+// 去掉环境变量覆盖后，任何构建产物都只可能指向主网。
+// 若日后重新部署合约，直接改下面的地址并重新构建即可。
+export const CONTRACTS = {
+  // CON 代币：质押币与奖励币为同一代币
   NBT_TOKEN: '0x66A585556138EbBb44Da0fF1324C796C44eb5ED1',
   // 质押合约地址：BSC 主网 2026-09-13 部署（tx 0x45459f346940a53a69959ba7d88efd00ef0dcb5c5b03ac929163d85d18751e9d）
   STAKING_BANK: '0x0B3943E0851341164D859DB56B6502c786EC8000',
+  NBT_PAIR: '',
   FEE_TOKEN: '',
 };
 
-const STALE_TESTNET_ADDRESSES = new Set([
-  '0x99fbddb26bc6b10dc9df80d6c6d943812047f406',
-  '0xb110ea48824383babede6ba7e19d5e01089de6cc',
-  '0x23ceb0c098c72d0207cdc1827e880d07f692c893',
-  '0xc84a22989be328e2caab41f1fe6bc8ed78004d04',
-]);
-
-// ============ 临时测试模式：true=强制 Sepolia 测试网 / false=BSC 主网（2026-09-13 主网合约已部署，切回 false）============
-const TEST_MODE = false;
-const TEST_NBT_TOKEN = '0x9868386Cf6175fE560eACaDaB71ce44BFE308fE7';   // Sepolia tCON
-const TEST_STAKING_BANK = '0x7e4DBfF0d6d4AE36cA8f2F16c4B06E42C02D001d'; // Sepolia 质押合约（修复版）
-// 当前链由 VITE_CHAIN_ID 决定：0x38 主网 / 0x61 测试网 / 0xaa36a7 Sepolia，默认主网
-const configuredChainId = TEST_MODE ? '0xaa36a7' : (import.meta.env.VITE_CHAIN_ID || '0x38');
-
-const mainnetSafeAddress = (value, fallback) => {
-  if (!value) return fallback;
-  if (STALE_TESTNET_ADDRESSES.has(value.toLowerCase())) return fallback;
-  return value;
-};
-
-export const CONTRACTS = {
-  NBT_TOKEN: TEST_MODE ? TEST_NBT_TOKEN : mainnetSafeAddress(import.meta.env.VITE_NBT_TOKEN, MAINNET_CONTRACTS.NBT_TOKEN),
-  STAKING_BANK: TEST_MODE ? TEST_STAKING_BANK : mainnetSafeAddress(import.meta.env.VITE_STAKING_BANK, MAINNET_CONTRACTS.STAKING_BANK),
-  NBT_PAIR: import.meta.env.VITE_NBT_PAIR || '',
-  FEE_TOKEN: import.meta.env.VITE_FEE_TOKEN || MAINNET_CONTRACTS.FEE_TOKEN,
-};
-
 export const NETWORKS = {
-  BSC_TESTNET: {
-    chainId: '0x61',
-    chainName: 'BSC Testnet',
-    nativeCurrency: {
-      name: 'BNB',
-      symbol: 'tBNB',
-      decimals: 18,
-    },
-    rpcUrls: [
-      'https://bsc-testnet.bnbchain.org',
-      'https://bsc-testnet.publicnode.com',
-      'https://bsc-testnet.blockpi.network/v1/rpc/public',
-      'https://data-seed-prebsc-1-s1.binance.org:8545/',
-      'https://data-seed-prebsc-2-s1.binance.org:8545/',
-    ],
-    blockExplorerUrls: ['https://testnet.bscscan.com'],
-  },
   BSC_MAINNET: {
     chainId: '0x38',
     chainName: 'BNB Smart Chain',
@@ -71,27 +32,10 @@ export const NETWORKS = {
     ],
     blockExplorerUrls: ['https://bscscan.com'],
   },
-  SEPOLIA: {
-    chainId: '0xaa36a7',
-    chainName: 'Sepolia Testnet',
-    nativeCurrency: {
-      name: 'Sepolia ETH',
-      symbol: 'ETH',
-      decimals: 18,
-    },
-    rpcUrls: [
-      'https://ethereum-sepolia-rpc.publicnode.com',
-      'https://rpc.sepolia.org',
-      'https://1rpc.io/sepolia',
-    ],
-    blockExplorerUrls: ['https://sepolia.etherscan.io'],
-  },
 };
 
-export const CURRENT_NETWORK =
-  configuredChainId === '0x38' ? NETWORKS.BSC_MAINNET
-  : configuredChainId === '0xaa36a7' ? NETWORKS.SEPOLIA
-  : NETWORKS.BSC_TESTNET;
+// 只保留主网：链 ID 固定 56 (0x38)，不再有测试网分支
+export const CURRENT_NETWORK = NETWORKS.BSC_MAINNET;
 
 export const EXPECTED_CHAIN_ID = parseInt(CURRENT_NETWORK.chainId, 16);
 
