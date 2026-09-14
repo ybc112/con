@@ -675,7 +675,12 @@ export default function AdminPage({ account, contracts, stakingData, onRefresh }
       </Card>
 
       {/* 总览 */}
-      <section className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div>
+        <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+          <FiZap className="text-[#38BDF8]" />
+          {l('overview')}
+        </h2>
+        <section className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <Stat
           label={l('contractBalance')}
           value={fmtCsv(contractBalance)}
@@ -697,7 +702,8 @@ export default function AdminPage({ account, contracts, stakingData, onRefresh }
           suffix={epoch?.amount ? `${fmtCsv(epoch.amount)} CON` : ''}
         />
         <Stat label={l('distributedTotal')} value={fmtCsv(mining?.totalDistributed)} suffix="CON" />
-      </section>
+        </section>
+      </div>
 
       {/* 邀请储备充值 */}
       <Card icon={FiUploadCloud} title={l('invitePool')} tone="#FFB800" className="border-l-4 border-l-[#FFB800]/70">
