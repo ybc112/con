@@ -293,6 +293,60 @@ export function useStakingBank(contract, account) {
   return { ...data, refetch: () => fetchData(true) };
 }
 
+// 后台管理页专用：合约储备余额、owner、参数锁定状态。
+// 注意：inviteRewardPool / totalStaked / priceFeed 等在合约中是 internal 变量，
+// 没有 public getter（旧 ABI 里那些同名函数是无效的），此处一律走真实存在的接口。
+export function useAdminOverview(contracts, account) {
+  const [data, setData] = useState({
+    contractBalance: null,   // 质押合约持有的 CON（含质押本金与各奖池）
+    owner: null,
+    isOwner: false,
+    isOperator: false,
+    paramsLocked: false,
+    loading: true,
+  });
+
+  const stakingBank = contracts?.stakingBank;
+  const token = contracts?.nbtToken;
+
+  const fetchData = useCallback(async () => {
+    if (!stakingBank) {
+      setData(prev => ({ ...prev, loading: false }));
+      return;
+    }
+
+    const [balance, owner, paramsLocked] = await Promise.all([
+      token ? safeRead(() => token.balanceOf(CONTRACTS.STAKING_BANK), null) : Promise.resolve(null),
+      safeRead(() => stakingBank.owner(), null),
+      safeRead(() => stakingBank.adminParamsLocked(), null),
+    ]);
+
+    let isOperator = false;
+    if (account) {
+      isOperator = await safeRead(() => stakingBank.operators(account), false);
+    }
+
+    const isOwner = !!owner && !!account && owner.toLowerCase() === account.toLowerCase();
+
+    setData(prev => ({
+      contractBalance: balance !== null ? ethers.formatEther(balance) : prev.contractBalance,
+      owner: owner || prev.owner,
+      isOwner,
+      isOperator: !!isOperator,
+      paramsLocked: typeof paramsLocked === 'boolean' ? paramsLocked : prev.paramsLocked,
+      loading: false,
+    }));
+  }, [stakingBank, token, account]);
+
+  useEffect(() => {
+    fetchData();
+    const interval = setInterval(fetchData, 30000);
+    return () => clearInterval(interval);
+  }, [fetchData]);
+
+  return { ...data, refetch: fetchData };
+}
+
 export function useTokenBalance(tokenContract, account) {
   const [balance, setBalance] = useState('0');
   const [loading, setLoading] = useState(true);

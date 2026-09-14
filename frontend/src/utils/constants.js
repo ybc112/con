@@ -74,6 +74,65 @@ export const formatEther = (value, decimals = 4) => {
   return num.toFixed(decimals);
 };
 
+// ============ 合约 custom error 解码 ============
+// NBTStakingBankV3 全部使用 custom error（没有任何 require 字符串），
+// ethers v6 只有在 ABI 里声明了 error 片段时才能解出 revert.name。
+// 下面按错误名给出可读文案，覆盖合约中的全部错误定义。
+export const CUSTOM_ERRORS = {
+  NotOwner: '当前钱包不是合约 owner，无权执行该操作',
+  NotAdmin: '当前钱包不是 owner 或管理员，无权执行该操作',
+  Reentrant: '检测到重入调用，交易被拒绝',
+  ContractPaused: '合约已暂停，质押/提取/开期等操作暂不可用',
+  InvalidToken: '代币地址无效',
+  InvalidFeeReceiver: '收币地址无效，或交互费设置超限',
+  InvalidAmount: '金额必须大于 0',
+  TooManyActiveStakes: '活跃质押笔数已达上限（单地址最多 50 笔）',
+  CompoundTokenMismatch: '质押币与奖励币不是同一代币，无法复投',
+  PreviousEpochNotSettled: '上一期尚未结算，请先结算再开新期',
+  NoEpoch: '还没有任何结算周期',
+  InvalidRate: '汇率不能设为 0',
+  MustBindReferrer: '首次质押必须绑定推荐人',
+  ReferrerMismatch: '传入的推荐人与已绑定的推荐人不一致',
+  NoTokensReceived: '未收到代币，请检查余额与授权额度',
+  ParamsLocked: '高危参数已锁定，不可再修改',
+  StakeNotActive: '该质押记录不存在或已提取',
+  LockNotEnded: '质押尚未到期（锁仓 15 天）',
+  InvalidReferrer: '推荐人地址无效',
+  CannotSelfRefer: '不能把自己设为推荐人',
+  AlreadyHasReferrer: '该地址已绑定推荐人，不可更改',
+  CircularReferral: '检测到循环推荐，或推荐链超过 20 层',
+  NoInviteReserve: '邀请奖励储备不足，请先调用「邀请储备充值」注资',
+  InvalidPrice: '价格源返回异常价格，已拒绝',
+  NoReinvestableAssets: '没有可复投的资产（邀请奖励/排名分红/到期本金均为 0）',
+  NoSuchEpoch: '该期不存在',
+  AlreadySettled: '该期已结算',
+  ClaimPeriodNotEnded: '领取期尚未结束，不能结算',
+  EpochAlreadyOpened: '该期已经开过，不能重复开期',
+  NoActiveEpoch: '当前没有进行中的期，请先开期',
+  EpochAlreadySettled: '该期已结算，无法再领取或注资',
+  PoolMerged: '该期因节点不足 10 个已合并顺延，奖池滚入下期',
+  ClaimWindowStarted: '领取期已开始，本期注资金额已锁定，不能再追加',
+  OutOfClaimWindow: '不在领取窗口内（开期后 3 天展示期 + 7 天领取期）',
+  NotSnapshotNode: '该地址不在本期快照名单中',
+  AlreadyClaimed: '本期奖励已经领取过',
+  NoReward: '本期应得奖励为 0',
+  NotNode: '该地址不是排行榜节点',
+  InvalidRank: '排名无效',
+  InvalidAddress: '地址无效',
+  OwnerIsSuperAdmin: 'owner 本身已有全部权限，无需设为管理员',
+  CannotRecoverStakingToken: '不能提取质押代币',
+  CannotRecoverRewardToken: '不能提取奖励代币',
+  CannotRecoverFeeToken: '不能提取交互费代币',
+  NotNewOwner: '只有待接任的 owner 才能接受所有权',
+  NativeTransferFailed: 'BNB 转账失败',
+  TransferFailed: '代币转账失败',
+  TransferFromFailed: '代币划转失败，请检查余额与授权额度',
+  NoRewards: '暂无可领取的邀请奖励',
+  InsufficientBnbFee: 'BNB 交互费不足，请附带足够的 BNB',
+  UnexpectedBnb: '当前用 ERC20 支付交互费，不需要附带 BNB',
+};
+
+// 兼容旧版 require 字符串错误（遗留合约 / 钱包自带提示）
 export const CONTRACT_ERRORS = {
   'Already has referrer': '您已经设置过推荐人，无法更改',
   'Cannot refer self': '不能将自己设置为推荐人',
@@ -140,12 +199,45 @@ const collectErrorText = (error, seen = new Set()) => {
   return output;
 };
 
+// 在错误对象树里找 ethers 解出的 revert 信息（ABI 声明 error 片段后才会存在）
+const findRevert = (error, seen = new Set()) => {
+  if (!error || typeof error !== 'object' || seen.has(error)) return null;
+  seen.add(error);
+  if (error.revert?.name) return error.revert;
+  for (const key of ['error', 'info', 'data', 'cause', 'payload', 'originalError']) {
+    const found = findRevert(error[key], seen);
+    if (found) return found;
+  }
+  if (Array.isArray(error.errors)) {
+    for (const nested of error.errors) {
+      const found = findRevert(nested, seen);
+      if (found) return found;
+    }
+  }
+  return null;
+};
+
+// 长名优先匹配，避免 NoReward 抢先命中 NoRewards 这类前缀包含
+const CUSTOM_ERROR_ENTRIES = Object.entries(CUSTOM_ERRORS).sort((a, b) => b[0].length - a[0].length);
+
 export const parseContractError = (error) => {
   if (!error) return '操作失败';
+
+  // 1) 优先用 ABI 解出的 custom error 名
+  const revert = findRevert(error);
+  if (revert?.name) {
+    return CUSTOM_ERRORS[revert.name] || `合约拒绝：${revert.name}`;
+  }
 
   const reason = collectErrorText(error).join(' | ');
   const normalizedReason = reason.toLowerCase();
 
+  // 2) 部分 RPC / 钱包会把错误名直接写进 message
+  for (const [name, message] of CUSTOM_ERROR_ENTRIES) {
+    if (reason.includes(name)) return message;
+  }
+
+  // 3) 遗留 require 字符串
   for (const [key, value] of Object.entries(CONTRACT_ERRORS)) {
     if (normalizedReason.includes(key.toLowerCase())) {
       return value;
