@@ -1,0 +1,17 @@
+{
+  "name": "con-downline-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CON 质押项目 —— 团队长伞下业绩看板（只读链上数据）",
+  "main": "server.cjs",
+  "scripts": {
+    "start": "node server.cjs"
+  },
+  "dependencies": {
+    "ethers": "^6.16.0",
+    "express": "^4.21.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

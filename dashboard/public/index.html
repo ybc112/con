@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="robots" content="noindex, nofollow" />
+<title>CON 伞下业绩看板</title>
+<style>
+  :root {
+    --bg: #0B1120;
+    --panel: rgba(255,255,255,.04);
+    --border: rgba(255,255,255,.10);
+    --text: #F8FAFC;
+    --dim: rgba(248,250,252,.45);
+    --blue: #38BDF8;
+    --gold: #FFB800;
+    --red: #FF6B6B;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 14px; line-height: 1.6;
+    background-image: radial-gradient(ellipse at top, rgba(56,189,248,.08), transparent 60%);
+    min-height: 100vh;
+  }
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 24px; margin: 0; display: flex; align-items: center; gap: 10px; }
+  h1 .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 12px var(--gold); }
+  .sub { color: var(--dim); font-size: 13px; margin-top: 6px; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 14px; padding: 18px; backdrop-filter: blur(8px);
+  }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .between { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+  button {
+    font: inherit; cursor: pointer; border-radius: 9px; padding: 9px 16px;
+    border: 1px solid var(--border); background: rgba(255,255,255,.06); color: var(--text);
+    transition: .15s;
+  }
+  button:hover:not(:disabled) { background: rgba(255,255,255,.12); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: linear-gradient(135deg, #38BDF8, #2563EB); border: none; color: #06121f; font-weight: 600; }
+  input {
+    font: inherit; padding: 10px 14px; border-radius: 9px; width: 100%;
+    border: 1px solid var(--border); background: rgba(0,0,0,.25); color: var(--text);
+  }
+  input:focus { outline: none; border-color: var(--blue); }
+  .muted { color: var(--dim); font-size: 12px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin: 18px 0; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 16px; }
+  .card .label { color: var(--dim); font-size: 12px; margin-bottom: 8px; }
+  .card .value { font-size: 22px; font-weight: 700; }
+  .card .value small { font-size: 12px; color: var(--dim); font-weight: 400; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 11px 10px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th { color: var(--dim); font-weight: 500; font-size: 12px; }
+  td.num, th.num { text-align: right; }
+  tbody tr.clickable { cursor: pointer; }
+  tbody tr.clickable:hover { background: rgba(56,189,248,.06); }
+  .detail-row td { background: rgba(0,0,0,.25); padding: 0; }
+  .detail { padding: 16px 18px; }
+  .detail h4 { margin: 0 0 10px; font-size: 13px; color: var(--blue); font-weight: 600; }
+  .detail h4.gold { color: var(--gold); }
+  .bar { height: 4px; border-radius: 2px; background: linear-gradient(90deg, var(--blue), transparent); margin-top: 3px; }
+  .banner { border-radius: 12px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px; }
+  .banner.err { background: rgba(255,107,107,.12); border: 1px solid rgba(255,107,107,.4); color: #ffc9c9; }
+  .banner.info { background: rgba(56,189,248,.10); border: 1px solid rgba(56,189,248,.3); color: #bfe8fb; }
+  .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; border: 1px solid var(--border); color: var(--dim); }
+  .login { max-width: 380px; margin: 14vh auto; }
+  .login h1 { justify-content: center; }
+  .hidden { display: none !important; }
+  .expand-hint { color: var(--dim); font-size: 11px; }
+  @media (max-width: 720px) {
+    .hide-sm { display: none; }
+    h1 { font-size: 19px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- 登录 -->
+<div id="loginView" class="wrap hidden">
+  <div class="login panel">
+    <h1><span class="dot"></span>CON 伞下业绩看板</h1>
+    <p class="sub" style="text-align:center">该看板含商业敏感数据，请输入访问密码</p>
+    <div style="margin-top:20px" class="row">
+      <input id="pwd" type="password" placeholder="访问密码" autocomplete="current-password" />
+    </div>
+    <div style="margin-top:12px">
+      <button id="loginBtn" class="primary" style="width:100%">进入</button>
+    </div>
+    <p id="loginErr" class="muted" style="color:var(--red);text-align:center;margin-top:12px"></p>
+  </div>
+</div>
+
+<!-- 主体 -->
+<div id="appView" class="wrap hidden">
+  <div class="between">
+    <div>
+      <h1><span class="dot"></span>CON 伞下业绩看板</h1>
+      <div class="sub" id="meta">加载中…</div>
+    </div>
+    <div class="row">
+      <button id="refreshBtn">刷新数据</button>
+      <button id="csvBtn">导出 CSV</button>
+      <button id="logoutBtn">退出</button>
+    </div>
+  </div>
+
+  <div id="banner" class="hidden"></div>
+
+  <div class="cards" id="cards"></div>
+
+  <div class="panel" style="padding:0;overflow-x:auto">
+    <table>
+      <thead>
+        <tr>
+          <th>团队长</th>
+          <th class="num">伞下人数</th>
+          <th class="num hide-sm">有效人数</th>
+          <th class="num">伞下累计业绩</th>
+          <th class="num">伞下当前有效</th>
+          <th class="num hide-sm">直推人数</th>
+          <th class="hide-sm"></th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+
+  <p class="muted" style="margin-top:14px">
+    口径说明：「累计业绩」= 合约 totalStaked，只增不减；「当前有效」= personalStakeVolume，被邀请人提取本金后会减少。
+    团队长在自己页面上看到的「邀请质押价值」是<strong>当前有效</strong>口径。
+  </p>
+  <p class="muted">
+    不含团队长本人业绩。点击任意一行可展开各层级明细。
+  </p>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let state = { data: null, timer: null };
+
+const fmt = (v) => {
+  const n = Number(v);
+  if (!isFinite(n)) return '0';
+  return n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+};
+const shortAddr = (a) => a.slice(0, 8) + '…' + a.slice(-6);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
+  });
+  return { status: res.status, body: await res.json().catch(() => ({})) };
+}
+
+// ---------------- 登录 ----------------
+async function checkSession() {
+  const { status } = await api('/api/session');
+  if (status === 200) { showApp(); } else { showLogin(); }
+}
+
+function showLogin() {
+  $('loginView').classList.remove('hidden');
+  $('appView').classList.add('hidden');
+  clearInterval(state.timer);
+  setTimeout(() => $('pwd').focus(), 50);
+}
+
+function showApp() {
+  $('loginView').classList.add('hidden');
+  $('appView').classList.remove('hidden');
+  loadReport();
+  clearInterval(state.timer);
+  state.timer = setInterval(loadReport, 15000);
+}
+
+$('loginBtn').onclick = async () => {
+  const password = $('pwd').value;
+  if (!password) return;
+  $('loginErr').textContent = '';
+  $('loginBtn').disabled = true;
+  const { status, body } = await api('/api/login', { method: 'POST', body: JSON.stringify({ password }) });
+  $('loginBtn').disabled = false;
+  if (status === 200) { $('pwd').value = ''; showApp(); }
+  else { $('loginErr').textContent = body.error || '登录失败'; }
+};
+$('pwd').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('loginBtn').click(); });
+
+$('logoutBtn').onclick = async () => {
+  await api('/api/logout', { method: 'POST' });
+  showLogin();
+};
+
+$('refreshBtn').onclick = async () => {
+  $('refreshBtn').disabled = true;
+  await api('/api/refresh', { method: 'POST' });
+  setTimeout(() => { $('refreshBtn').disabled = false; }, 3000);
+  setTimeout(loadReport, 1500);
+};
+
+// ---------------- 渲染 ----------------
+async function loadReport() {
+  const { status, body } = await api('/api/report');
+  if (status === 401) { showLogin(); return; }
+  const d = body.data;
+
+  const parts = [];
+  if (body.lastSuccessAt) parts.push('更新于 ' + new Date(body.lastSuccessAt).toLocaleString('zh-CN', { hour12: false }));
+  if (d) parts.push('区块 #' + d.block);
+  if (d) parts.push('团队长 ' + d.rows.length + ' 个');
+  if (d) parts.push('读取 ' + d.addressesRead + ' 个地址，耗时 ' + (d.elapsedMs / 1000).toFixed(1) + 's');
+  if (body.refreshing) parts.push('· 正在刷新…');
+  $('meta').textContent = parts.join('　|　') || '暂无数据';
+
+  const banner = $('banner');
+  if (body.lastError) {
+    banner.className = 'banner err';
+    banner.innerHTML = '⚠️ 最近一次刷新失败：' + esc(body.lastError) + '（下方为上一次成功的数据）';
+  } else if (!d) {
+    banner.className = 'banner info';
+    banner.textContent = '尚未生成数据。请确认 /opt/con-downline/data/leaders.txt 中已填入团队长地址，然后点「刷新数据」。';
+  } else {
+    banner.className = 'hidden';
+  }
+
+  $('refreshBtn').disabled = !!body.refreshing;
+  if (!d) { $('cards').innerHTML = ''; $('tbody').innerHTML = ''; return; }
+  state.data = d;
+  renderCards(d);
+  renderTable(d);
+}
+
+function renderCards(d) {
+  const totalCount = d.rows.reduce((s, r) => s + r.downlineCount, 0);
+  const totalCum = d.rows.reduce((s, r) => s + Number(r.downlineCumulative), 0);
+  const totalAct = d.rows.reduce((s, r) => s + Number(r.downlineActive), 0);
+  $('cards').innerHTML = [
+    ['团队长数量', d.rows.length, '个'],
+    ['伞下总人数（合计）', totalCount, '人'],
+    ['伞下累计业绩（合计）', fmt(totalCum), ''],
+    ['伞下当前有效（合计）', fmt(totalAct), ''],
+  ].map(([label, value, unit]) => `
+    <div class="card">
+      <div class="label">${label}</div>
+      <div class="value">${typeof value === 'number' ? value.toLocaleString() : value}${unit ? ' <small>' + unit + '</small>' : ''}</div>
+    </div>`).join('');
+}
+
+function renderTable(d) {
+  if (d.rows.length === 0) {
+    $('tbody').innerHTML = '<tr><td colspan="7" class="muted" style="padding:28px;text-align:center">名单为空，请在 leaders.txt 中填入团队长地址</td></tr>';
+    return;
+  }
+  $('tbody').innerHTML = d.rows.map((r, i) => {
+    const levelRows = r.levels.length === 0
+      ? '<tr><td colspan="5" class="muted">伞下暂无成员</td></tr>'
+      : r.levels.map((l) => `
+          <tr>
+            <td>第 ${l.depth} 代</td>
+            <td class="num">${l.count}</td>
+            <td class="num">${l.activeCount}</td>
+            <td class="num">${fmt(l.cumulative)}</td>
+            <td class="num">${fmt(l.active)}</td>
+          </tr>`).join('');
+
+    return `
+      <tr class="clickable" data-i="${i}">
+        <td class="mono">${shortAddr(r.address)}</td>
+        <td class="num">${r.downlineCount}</td>
+        <td class="num hide-sm">${r.downlineActiveCount}</td>
+        <td class="num" style="color:var(--gold);font-weight:600">${fmt(r.downlineCumulative)}</td>
+        <td class="num" style="color:var(--blue);font-weight:600">${fmt(r.downlineActive)}</td>
+        <td class="num hide-sm">${r.directCount}</td>
+        <td class="hide-sm"><span class="expand-hint">展开 ▾</span></td>
+      </tr>
+      <tr class="detail-row hidden" data-detail="${i}">
+        <td colspan="7">
+          <div class="detail">
+            <h4>按层级拆分</h4>
+            <table>
+              <thead><tr>
+                <th>层级</th><th class="num">人数</th><th class="num">有效人数</th>
+                <th class="num">累计业绩</th><th class="num">当前有效</th>
+              </tr></thead>
+              <tbody>${levelRows}</tbody>
+            </table>
+            <h4 class="gold" style="margin-top:16px">团队长本人（不计入伞下）</h4>
+            <div class="row" style="gap:28px">
+              <div><div class="muted">自身累计质押</div><div class="mono">${fmt(r.selfCumulative)}</div></div>
+              <div><div class="muted">自身当前有效</div><div class="mono">${fmt(r.selfActive)}</div></div>
+              <div><div class="muted">直推人数</div><div class="mono">${r.selfDirectReferrals}</div></div>
+              <div><div class="muted">直推当前有效</div><div class="mono">${fmt(r.selfReferralVolume)}</div></div>
+            </div>
+            <div style="margin-top:14px"><span class="pill mono">${r.address}</span></div>
+          </div>
+        </td>
+      </tr>`;
+  }).join('');
+
+  $('tbody').querySelectorAll('tr.clickable').forEach((tr) => {
+    tr.onclick = () => {
+      const detail = $('tbody').querySelector(`tr[data-detail="${tr.dataset.i}"]`);
+      detail.classList.toggle('hidden');
+      const hint = tr.querySelector('.expand-hint');
+      if (hint) hint.textContent = detail.classList.contains('hidden') ? '展开 ▾' : '收起 ▴';
+    };
+  });
+}
+
+// ---------------- 导出 CSV ----------------
+$('csvBtn').onclick = () => {
+  const d = state.data;
+  if (!d) return alert('暂无数据可导出');
+  const deepest = d.rows.reduce((m, r) => Math.max(m, r.levels.length), 0);
+  const head = ['团队长地址', '伞下总人数', '伞下有效人数', '伞下累计业绩', '伞下当前有效业绩'];
+  for (let i = 1; i <= deepest; i++) head.push(`L${i}人数`, `L${i}有效人数`, `L${i}累计业绩`, `L${i}当前有效业绩`);
+  head.push('直推人数', '直推累计业绩', '直推当前有效业绩', '本人累计质押', '本人当前有效', '快照区块');
+
+  const lines = [head.join(',')];
+  for (const r of d.rows) {
+    const cells = [r.address, r.downlineCount, r.downlineActiveCount, r.downlineCumulative, r.downlineActive];
+    for (let i = 1; i <= deepest; i++) {
+      const l = r.levels.find((x) => x.depth === i);
+      cells.push(l ? l.count : 0, l ? l.activeCount : 0, l ? l.cumulative : '0', l ? l.active : '0');
+    }
+    cells.push(r.directCount, r.directCumulative, r.directActive, r.selfCumulative, r.selfActive, d.block);
+    lines.push(cells.join(','));
+  }
+  const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `伞下业绩-区块${d.block}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+
+checkSession();
+</script>
+</body>
+</html>
