@@ -24,10 +24,9 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const LEADERS_FILE = path.join(DATA_DIR, 'leaders.txt');
 const CACHE_FILE = path.join(DATA_DIR, 'cache.json');
 
-if (!ACCESS_PASSWORD) {
-  console.error('❌ 未设置 ACCESS_PASSWORD 环境变量，拒绝启动（防止数据裸奔）');
-  process.exit(1);
-}
+// 访问控制开关：设置了 ACCESS_PASSWORD 就需要密码，留空则完全公开。
+// ⚠️ 公开模式下，任何人拿到地址都能看到全部团队长的伞下业绩。
+const AUTH_ENABLED = !!ACCESS_PASSWORD;
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -126,6 +125,7 @@ app.disable('x-powered-by');
 app.use(express.json());
 
 function requireAuth(req, res, next) {
+  if (!AUTH_ENABLED) return next();
   const token = req.headers.cookie
     ?.split(';')
     .map((c) => c.trim())
@@ -136,6 +136,7 @@ function requireAuth(req, res, next) {
 }
 
 app.post('/api/login', (req, res) => {
+  if (!AUTH_ENABLED) return res.json({ ok: true, authRequired: false });
   const { password } = req.body || {};
   if (!password || !safeEqual(password, ACCESS_PASSWORD)) {
     return res.status(401).json({ ok: false, error: '密码错误' });
@@ -144,7 +145,7 @@ app.post('/api/login', (req, res) => {
     'Set-Cookie',
     `${COOKIE_NAME}=${SESSION_TOKEN}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${COOKIE_MAX_AGE / 1000}`
   );
-  res.json({ ok: true });
+  res.json({ ok: true, authRequired: true });
 });
 
 app.post('/api/logout', (req, res) => {
@@ -152,7 +153,9 @@ app.post('/api/logout', (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/api/session', requireAuth, (req, res) => res.json({ ok: true }));
+app.get('/api/session', requireAuth, (req, res) =>
+  res.json({ ok: true, authRequired: AUTH_ENABLED })
+);
 
 app.get('/api/report', requireAuth, (req, res) => {
   res.json({
@@ -175,6 +178,11 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.listen(PORT, '127.0.0.1', () => {
   console.log(`CON 伞下业绩看板已启动: http://127.0.0.1:${PORT}`);
   console.log(`合约: ${CONTRACT}   深度: ${DEPTH}   刷新间隔: ${REFRESH_MINUTES} 分钟`);
+  console.log(
+    AUTH_ENABLED
+      ? '访问控制: 已开启（需要密码）'
+      : '访问控制: ⚠️ 已关闭 —— 任何人访问该地址都能看到全部伞下业绩'
+  );
   if (!fs.existsSync(LEADERS_FILE)) {
     fs.writeFileSync(
       LEADERS_FILE,

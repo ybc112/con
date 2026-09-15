@@ -6,7 +6,8 @@
 - 只读链上数据，**不需要私钥，不发起任何交易**
 - 爬取逻辑与仓库根的 `con-downline-report.cjs` 一致（已通过 30 项单元测试
   与本地链端到端验证），见 `crawler.cjs` 顶部注释中的三条正确性保证
-- 页面有密码保护：伞下业绩属商业敏感数据，不做公开访问
+- 访问控制由 `ACCESS_PASSWORD` 环境变量控制：**设了就要密码，留空则完全公开**
+  （生产环境当前为公开模式，见 `CON看板部署说明.md` 第 6.2 节）
 
 生产部署见仓库根目录的 `CON看板部署说明.md`。
 
@@ -14,7 +15,8 @@
 
 ```bash
 npm install
-ACCESS_PASSWORD=你的密码 PORT=3030 node server.cjs
+ACCESS_PASSWORD=你的密码 PORT=3030 node server.cjs   # 带密码
+PORT=3030 node server.cjs                            # 不带密码 = 公开模式
 # 打开 http://127.0.0.1:3030
 ```
 
@@ -22,7 +24,7 @@ ACCESS_PASSWORD=你的密码 PORT=3030 node server.cjs
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `ACCESS_PASSWORD` | 无（必填） | 访问密码，未设置则拒绝启动 |
+| `ACCESS_PASSWORD` | 空 | 留空 = 公开访问；设置后需要密码登录 |
 | `PORT` | 3030 | 监听端口（仅绑定 127.0.0.1） |
 | `DATA_DIR` | `./data` | 名单与缓存目录 |
 | `CONTRACT` | 主网质押合约 | 质押合约地址 |

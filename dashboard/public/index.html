@@ -161,9 +161,18 @@ async function api(path, opts = {}) {
 }
 
 // ---------------- 登录 ----------------
+let authRequired = true;
+
 async function checkSession() {
-  const { status } = await api('/api/session');
-  if (status === 200) { showApp(); } else { showLogin(); }
+  const { status, body } = await api('/api/session');
+  if (status === 200) {
+    // 服务端未设置密码时为公开模式，直接进主界面
+    authRequired = body.authRequired !== false;
+    showApp();
+  } else {
+    authRequired = true;
+    showLogin();
+  }
 }
 
 function showLogin() {
@@ -176,6 +185,7 @@ function showLogin() {
 function showApp() {
   $('loginView').classList.add('hidden');
   $('appView').classList.remove('hidden');
+  $('logoutBtn').classList.toggle('hidden', !authRequired);
   loadReport();
   clearInterval(state.timer);
   state.timer = setInterval(loadReport, 15000);
