@@ -453,11 +453,23 @@ export default function AdminPage({ account, contracts, stakingData, onRefresh }
   // ---- 周期操作 ----
   const openEpoch = () => run('openEpoch', '正在开期…', '开期成功', () => contracts.writeStakingBank.openEpoch());
   const settleEpoch = () => run('settleEpoch', '正在结算…', '结算成功', () => contracts.writeStakingBank.settleEpoch());
+
+  // 注资/充值前自动授权 CON：不足则先 approve（MaxUint256），避免「insufficient allowance」报错
+  const ensureTokenAllowance = async () => {
+    if (!contracts?.writeNbtToken || !account || !CONTRACTS.STAKING_BANK) return;
+    const allowance = await contracts.writeNbtToken.allowance(account, CONTRACTS.STAKING_BANK);
+    if (allowance < ethers.MaxUint256 / 2n) {
+      const tx = await contracts.writeNbtToken.approve(CONTRACTS.STAKING_BANK, ethers.MaxUint256, { gasLimit: 300000 });
+      await tx.wait();
+    }
+  };
+
   const fundEpoch = () => {
     const amount = parseAmount(releaseAmount);
     if (!amount) return;
     run('fundEpoch', '正在注资…', '注资成功', async () => {
-      const tx = await contracts.writeStakingBank.fundEpoch(amount);
+      await ensureTokenAllowance();
+      const tx = await contracts.writeStakingBank.fundEpoch(amount, { gasLimit: 2000000 });
       setReleaseAmount('');
       return tx;
     });
@@ -468,7 +480,8 @@ export default function AdminPage({ account, contracts, stakingData, onRefresh }
     const amount = parseAmount(invitePoolAmount);
     if (!amount) return;
     run('fundInvitePool', '正在充值邀请储备…', '邀请储备充值成功', async () => {
-      const tx = await contracts.writeStakingBank.fundInvitePool(amount);
+      await ensureTokenAllowance();
+      const tx = await contracts.writeStakingBank.fundInvitePool(amount, { gasLimit: 2000000 });
       setInvitePoolAmount('');
       return tx;
     });
