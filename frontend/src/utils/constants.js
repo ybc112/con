@@ -20,15 +20,17 @@ export const NETWORKS = {
       symbol: 'BNB',
       decimals: 18,
     },
-    // 优先使用中国大陆可访问的节点；QuikNode 私有节点优先，官方节点保留为 fallback
+    // 多节点候选：前端 MultiRpcProvider 会运行时自动切换到可用节点，
+    // 单节点抖动（could not coalesce / 超时）不影响页面读取与交易等待
     rpcUrls: [
-      'https://bitter-old-frog.bsc.quiknode.pro/f4ae6360d1ac5cfb9ed35857f574f0a5449352d3',
       'https://bsc.publicnode.com',
       'https://bsc-dataseed.binance.org/',
       'https://bsc-dataseed1.binance.org/',
       'https://bsc-dataseed2.binance.org/',
       'https://bsc.blockpi.network/v1/rpc/public',
       'https://rpc.ankr.com/bsc',
+      'https://rpc-bsc.48.club',
+      'https://bitter-old-frog.bsc.quiknode.pro/f4ae6360d1ac5cfb9ed35857f574f0a5449352d3',
     ],
     blockExplorerUrls: ['https://bscscan.com'],
   },
@@ -161,7 +163,7 @@ export const CONTRACT_ERRORS = {
   'Unexpected BNB': '当前操作不需要附带 BNB',
   'Native transfer failed': 'BNB 手续费发送失败',
   'execution reverted': '交易执行失败',
-  'could not coalesce error': '钱包返回异常，交易可能已经提交，请刷新页面或在钱包交易记录中确认',
+  'could not coalesce error': 'RPC 节点响应异常，交易可能已提交，请稍后刷新页面确认',
 };
 
 const collectErrorText = (error, seen = new Set()) => {

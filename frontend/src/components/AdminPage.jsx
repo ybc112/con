@@ -7,6 +7,7 @@ import {
   FiUploadCloud, FiUserPlus, FiZap,
 } from 'react-icons/fi';
 import { CONTRACTS, formatAddress, getExplorerAddressUrl, parseContractError } from '../utils/constants';
+import { isRpcNodeError, waitTxConfirmed } from '../utils/rpc';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAdminOverview } from '../hooks/useContracts';
 
@@ -388,12 +389,15 @@ export default function AdminPage({ account, contracts, stakingData, onRefresh }
     toast.loading(loadingText, { id: key });
     try {
       const tx = await fn();
-      await tx.wait();
+      // 交易等待：遇 RPC 节点抖动（could not coalesce 等）时自动切换节点/轮询回执，
+      // 不再直接误报「钱包返回异常」；真正 revert 会正常抛错
+      await waitTxConfirmed(tx, tx?.provider || null);
       toast.success(successText, { id: key });
       refresh();
       return true;
     } catch (err) {
-      toast.error(parseContractError(err), { id: key });
+      // RPC 节点类错误给出明确提示，不再误导为用户拒绝/钱包异常
+      toast.error(isRpcNodeError(err) ? 'RPC 节点响应异常，交易可能已提交，请稍后刷新页面确认' : parseContractError(err), { id: key });
       return false;
     } finally {
       setWorking('');
