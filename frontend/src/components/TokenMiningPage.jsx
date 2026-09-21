@@ -623,6 +623,9 @@ export default function TokenMiningPage({
               <div className="p-4 rounded-xl bg-white/5 border border-white/5">
                 <div className="text-white/45 text-sm">{t('cz.node.rankPending')}</div>
                 <div className="text-2xl font-bold text-[#FFB800]">{formatNumber(userInfo?.pendingRankRewards, 4)} CON</div>
+                {stakingData?.currentRelease && (
+                  <div className="text-xs text-white/40 mt-1">本期奖池：{formatNumber(stakingData.currentRelease.amount, 4)} CON</div>
+                )}
                 <button
                   onClick={handleClaimRank}
                   disabled={!account || isClaimingRank || isCompounding || isClaiming || !(parseFloat(userInfo?.pendingRankRewards || '0') > 0)}
