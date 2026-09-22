@@ -22,6 +22,7 @@ export default function ReferralPage({
   const needsFeeApproval = !isNativeFee && parseFloat(feeAllowance || '0') < parseFloat(feeAmount || '0');
   const [copied, setCopied] = useState(false);
   const [referrals, setReferrals] = useState([]);
+  const [referralVolumes, setReferralVolumes] = useState({}); // addr -> { personal, invited }
   const [offset, setOffset] = useState(0);
   const [total, setTotal] = useState(0);
   const [loadingReferrals, setLoadingReferrals] = useState(false);
@@ -168,6 +169,19 @@ export default function ReferralPage({
       const nextOffset = reset ? 0 : offset;
       const result = await stakingContract.getReferralsPaginated(account, nextOffset, PAGE_SIZE);
       const nextItems = Array.from(result.result);
+      // 给每个直推成员查伞下业绩（个人业绩 + 邀请业绩）
+      const volumes = {};
+      await Promise.all(nextItems.map(async (addr) => {
+        try {
+          const ui = await stakingContract.getUserInfo(addr);
+          const info = ui?.info || ui?.[0] || {};
+          volumes[addr.toLowerCase()] = {
+            personal: ethers.formatEther(info.personalStakeVolume ?? info?.[7] ?? 0n),
+            invited: ethers.formatEther(info.referralStakeVolume ?? info?.[6] ?? 0n),
+          };
+        } catch { /* 单个查询失败忽略 */ }
+      }));
+      setReferralVolumes(prev => ({ ...prev, ...volumes }));
       setReferrals(prev => reset ? nextItems : [...prev, ...nextItems]);
       setOffset(nextOffset + nextItems.length);
       setTotal(Number(result.total));
@@ -182,7 +196,24 @@ export default function ReferralPage({
     setReferrals(stakingData?.referrals || []);
     setTotal(stakingData?.referralsTotal || 0);
     setOffset((stakingData?.referrals || []).length);
-  }, [stakingData?.referrals, stakingData?.referralsTotal]);
+    // 初始直推也拉取业绩
+    if (stakingData?.referrals?.length && stakingContract) {
+      (async () => {
+        const volumes = {};
+        await Promise.all(stakingData.referrals.map(async (addr) => {
+          try {
+            const ui = await stakingContract.getUserInfo(addr);
+            const info = ui?.info || ui?.[0] || {};
+            volumes[addr.toLowerCase()] = {
+              personal: ethers.formatEther(info.personalStakeVolume ?? info?.[7] ?? 0n),
+              invited: ethers.formatEther(info.referralStakeVolume ?? info?.[6] ?? 0n),
+            };
+          } catch { /* 忽略 */ }
+        }));
+        setReferralVolumes(prev => ({ ...prev, ...volumes }));
+      })();
+    }
+  }, [stakingData?.referrals, stakingData?.referralsTotal, stakingContract]);
 
   return (
     <div className="space-y-8">
@@ -278,20 +309,29 @@ export default function ReferralPage({
             <div className="text-center py-12 text-white/40">{t('cz.referral.noInvites')}</div>
           ) : (
             <div className="space-y-2">
-              {referrals.map((address, index) => (
+              {referrals.map((address, index) => {
+                const vol = referralVolumes[address.toLowerCase()] || {};
+                return (
                 <div key={`${address}-${index}`} className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/5">
-                  <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
                     <div className="w-8 h-8 rounded-full bg-[#FFB800] flex items-center justify-center text-black text-xs font-bold flex-shrink-0">
                       {index + 1}
                     </div>
-                    <span className="font-mono text-white truncate">{formatAddress(address)}</span>
+                    <div className="min-w-0">
+                      <span className="font-mono text-white truncate block">{formatAddress(address)}</span>
+                      <div className="flex items-center gap-3 text-xs text-white/45 mt-1 whitespace-nowrap">
+                        <span>个人业绩 {vol.personal !== undefined ? formatNumber(vol.personal, 2) : '—'} U</span>
+                        <span>伞下业绩 {vol.invited !== undefined ? formatNumber(vol.invited, 2) : '—'} U</span>
+                      </div>
+                    </div>
                   </div>
                   <a href={getExplorerAddressUrl(address)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[#38BDF8] flex-shrink-0">
                     <span className="text-sm hidden sm:inline">{t('cz.common.view')}</span>
                     <FiExternalLink className="w-4 h-4" />
                   </a>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
