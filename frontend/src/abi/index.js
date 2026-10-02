@@ -21,6 +21,26 @@ export const NBT_TOKEN_ABI = [
   "function DOMAIN_SEPARATOR() view returns (bytes32)",
 ];
 
+// 独立节点排名分红合约 ABI（2026-10-02 新增：原主合约无 pendingEpochReward 接口，
+// 前端无法读取/领取排名分红，改由本合约发放。用户按周期 claim，DISPLAY_PERIOD=0 即开即领）
+export const RANK_DISTRIBUTOR_ABI = [
+  "function currentEpochId() view returns (uint256)",
+  "function pendingCarryover() view returns (uint256)",
+  "function rewardToken() view returns (address)",
+  "function owner() view returns (address)",
+  "function epochs(uint256) view returns (uint256 snapshotTime, uint256 poolAmount, uint256 totalNodes, uint256 totalClaimed, bool settled, bool disabled)",
+  "function epochRank(uint256 epochId, address node) view returns (uint256)",
+  "function claimed(uint256 epochId, address node) view returns (bool)",
+  "function claimStart(uint256 epochId) view returns (uint256)",
+  "function claimEnd(uint256 epochId) view returns (uint256)",
+  "function pendingClaim(uint256 epochId, address node) view returns (uint256)",
+  "function pendingClaimAll(address node) view returns (uint256 total, uint256 count)",
+  "function rankShare(uint256 pool, uint256 totalNodes, uint256 rank) view returns (uint256)",
+  "function claim(uint256 epochId)",
+  "function claimAll()",
+  "event EpochRewardClaimed(uint256 indexed epochId, address indexed node, uint256 rank, uint256 amount)",
+];
+
 export const STAKING_BANK_ABI = [
   "function stakingToken() view returns (address)",
   "function rewardToken() view returns (address)",

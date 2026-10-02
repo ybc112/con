@@ -320,15 +320,16 @@ export default function TokenMiningPage({
     }
   };
 
-  // 节点排名分红按 15 天期结算，需通过 claimEpochReward 单独领取（当前未结算且处于领取窗口的期）
+  // 节点排名分红按 15 天期结算。原主合约无 pendingEpochReward 接口（前端读不到待领金额，
+  // 按钮禁用，排名分红无法领取），改由独立分红合约 RankRewardDistributor 发放（DISPLAY_PERIOD=0 即开即领）。
+  // 该合约不收取 BNB 交互费，因此不附带 value。
   const handleClaimRank = async () => {
-    if (!contracts?.writeStakingBank) return;
+    if (!contracts?.writeRankDistributor) return;
     if (!(await ensureNetwork())) return;
     setIsClaimingRank(true);
     try {
       await ensureVaultAllowance();
-      // F05：ABI 有两个 claimEpochReward 重载，必须显式无参签名
-      const tx = await contracts.writeStakingBank['claimEpochReward()']({ ...feeTxOptions(), gasLimit: 3000000 });
+      const tx = await contracts.writeRankDistributor.claimAll({ gasLimit: 1000000 });
       toast.loading('正在领取排名分红…', { id: 'claimRank' });
       await tx.wait();
       toast.success('排名分红领取成功', { id: 'claimRank' });

