@@ -73,6 +73,13 @@ const LABELS = {
     rankDistTipNoEpoch: '尚未开期，用户看不到待领排名分红，请先点「开期」。',
     rankDistTipNeedSettle: '上一期还未结算且领取期未结束，暂不能开新期（可先结算，或等领取期结束）。',
     rankDistTipFunded: '本期已注资，用户现在即可领取排名分红。',
+    rankDistOwnership: '分红合约所有权',
+    rankDistOwnerNow: '当前 owner',
+    rankDistTransferPlaceholder: '新 owner 地址 0x...',
+    rankDistTransferBtn: '发起转交',
+    rankDistAccept: '接受所有权',
+    rankDistPendingHint: '已有待接任 owner，请其连接钱包后点「接受所有权」完成接管。',
+    rankDistNotOwnerHint: '只有分红合约的 owner 能操作开期/注资/结算。当前钱包不是 owner。',
 
     invitePool: '邀请储备充值',
     invitePoolDesc: '用户每推荐 1 个达标用户，合约扣 100 CON 作为邀请奖励。储备不足时，被推荐的新用户质押会整笔回滚（NoInviteReserve）。',
@@ -204,6 +211,13 @@ const LABELS = {
     rankDistTipNoEpoch: 'No epoch opened — users see no claimable rank dividends. Click "Open epoch" first.',
     rankDistTipNeedSettle: 'Previous epoch is unsettled and its claim window is still open — cannot open a new one yet.',
     rankDistTipFunded: 'This epoch is funded; users can claim their rank dividends now.',
+    rankDistOwnership: 'Distributor ownership',
+    rankDistOwnerNow: 'Current owner',
+    rankDistTransferPlaceholder: 'New owner address 0x...',
+    rankDistTransferBtn: 'Initiate transfer',
+    rankDistAccept: 'Accept ownership',
+    rankDistPendingHint: 'A pending owner exists; they must connect and click "Accept ownership" to take over.',
+    rankDistNotOwnerHint: 'Only the distributor owner can open/fund/settle epochs. This wallet is not the owner.',
 
     invitePool: 'Invite Reserve Top-up',
     invitePoolDesc: 'Each qualified referral deducts 100 CON. If the reserve runs out, new referred users cannot stake (NoInviteReserve).',
@@ -335,6 +349,9 @@ export default function AdminPage({ account, contracts, stakingData, onRefresh }
   const [releaseAmount, setReleaseAmount] = useState('');
   const [rankFundAmount, setRankFundAmount] = useState('');
   const [distEpoch, setDistEpoch] = useState(null);
+  const [distOwner, setDistOwner] = useState('');
+  const [distPendingOwner, setDistPendingOwner] = useState('');
+  const [newDistOwner, setNewDistOwner] = useState('');
   const [invitePoolAmount, setInvitePoolAmount] = useState('');
   const [inviteReward, setInviteReward] = useState('');
   const [minStakeValue, setMinStakeValue] = useState('');
@@ -391,8 +408,12 @@ export default function AdminPage({ account, contracts, stakingData, onRefresh }
   // 独立分红合约：当前期状态（期号/奖池/节点/已领/领取窗口）
   const dist = contracts?.rankDistributor;
   const refetchDist = useCallback(async () => {
-    if (!dist) { setDistEpoch(null); return; }
+    if (!dist) { setDistEpoch(null); setDistOwner(''); setDistPendingOwner(''); return; }
     try {
+      const ownerAddr = await dist.owner().catch(() => '');
+      setDistOwner(ownerAddr || '');
+      const pendingAddr = await dist.pendingOwner().catch(() => '');
+      setDistPendingOwner(pendingAddr || '');
       const id = Number(await dist.currentEpochId());
       if (id === 0) { setDistEpoch({ epochId: 0 }); return; }
       const ep = await dist.epochs(id);
@@ -449,10 +470,13 @@ export default function AdminPage({ account, contracts, stakingData, onRefresh }
     return 'expired';
   }, [distEpoch, nowSec]);
 
-  // 独立分红合约使用 onlyOwner（非 operator），因此按钮只对 owner 开放
-  const canRankOpen = isOwner && !!contracts?.writeRankDistributor && ['none', 'settled', 'expired', 'disabled'].includes(distPhase);
-  const canRankSettle = isOwner && !!contracts?.writeRankDistributor && ['expired', 'disabled'].includes(distPhase);
-  const canRankFund = isOwner && !!contracts?.writeRankDistributor && ['display', 'claim'].includes(distPhase);
+  // 独立分红合约使用 onlyOwner（无 operator），因此按钮只对「分红合约自己的 owner」开放
+  const isDistOwner = !!account && !!distOwner && account.toLowerCase() === distOwner.toLowerCase();
+  const isDistPendingOwner = !!account && !!distPendingOwner && distPendingOwner !== ethers.ZeroAddress
+    && account.toLowerCase() === distPendingOwner.toLowerCase();
+  const canRankOpen = isDistOwner && !!contracts?.writeRankDistributor && ['none', 'settled', 'expired', 'disabled'].includes(distPhase);
+  const canRankSettle = isDistOwner && !!contracts?.writeRankDistributor && ['expired', 'disabled'].includes(distPhase);
+  const canRankFund = isDistOwner && !!contracts?.writeRankDistributor && ['display', 'claim'].includes(distPhase);
 
   const refresh = useCallback(() => {
     onRefresh?.();
@@ -591,6 +615,22 @@ export default function AdminPage({ account, contracts, stakingData, onRefresh }
       return tx;
     });
   };
+
+  // ---- 独立分红合约：所有权转交（两步：发起 → 新 owner 接受）----
+  const transferDistOwnership = () => {
+    const addr = requireAddress(newDistOwner);
+    if (!addr) return;
+    run('distTransfer', '正在发起转交…', '已发起，请新 owner 连接钱包后点「接受所有权」', () => {
+      const tx = contracts.writeRankDistributor.transferOwnership(addr, { gasLimit: 200000 });
+      setNewDistOwner('');
+      return tx;
+    });
+  };
+
+  const acceptDistOwnership = () => run(
+    'distAccept', '正在接受所有权…', '已接管分红合约',
+    () => contracts.writeRankDistributor.acceptOwnership({ gasLimit: 200000 })
+  );
 
   // ---- 邀请储备 ----
   const fundInvitePool = () => {
@@ -1045,11 +1085,46 @@ export default function AdminPage({ account, contracts, stakingData, onRefresh }
           </div>
         )}
 
-        {!isOwner && (
-          <div className="mb-4 rounded-lg bg-white/5 border border-white/10 p-3 text-xs text-white/45">
-            {l('roleNoneHint')}
+        {/* 所有权（分红合约单 owner，需要换人时在此转交） */}
+        <div className="mb-4 p-4 rounded-xl bg-white/5 border border-white/10">
+          <div className="flex flex-wrap items-center gap-2 text-xs mb-3">
+            <span className="text-white/40">{l('rankDistOwnerNow')}</span>
+            <span className="text-white/80 font-mono">{distOwner ? formatAddress(distOwner) : '—'}</span>
+            {isDistOwner && <span className="px-2 py-0.5 rounded bg-[#00D9A5]/15 text-[#7FE7C9]">{l('roleOwner')}</span>}
           </div>
-        )}
+
+          {isDistOwner && (
+            <div className="grid sm:grid-cols-[1fr_auto] gap-3">
+              <input
+                className="input-premium"
+                value={newDistOwner}
+                onChange={(e) => setNewDistOwner(e.target.value)}
+                placeholder={l('rankDistTransferPlaceholder')}
+              />
+              <button
+                onClick={transferDistOwnership}
+                disabled={anyBusy || !newDistOwner}
+                className="btn-ghost disabled:opacity-50"
+              >
+                {isBusy('distTransfer') ? l('working') : l('rankDistTransferBtn')}
+              </button>
+            </div>
+          )}
+
+          {isDistPendingOwner && (
+            <button onClick={acceptDistOwnership} disabled={anyBusy} className="btn-premium w-full disabled:opacity-50">
+              {isBusy('distAccept') ? l('working') : l('rankDistAccept')}
+            </button>
+          )}
+
+          {!isDistOwner && !isDistPendingOwner && (
+            <div className="text-xs text-white/45">
+              {distPendingOwner && distPendingOwner !== ethers.ZeroAddress
+                ? l('rankDistPendingHint')
+                : l('rankDistNotOwnerHint')}
+            </div>
+          )}
+        </div>
 
         <div className="grid grid-cols-2 gap-3 mb-4">
           <button onClick={openRankEpoch} disabled={anyBusy || !canRankOpen} className="btn-ghost disabled:opacity-50">

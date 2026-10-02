@@ -28,6 +28,7 @@ export const RANK_DISTRIBUTOR_ABI = [
   "function pendingCarryover() view returns (uint256)",
   "function rewardToken() view returns (address)",
   "function owner() view returns (address)",
+  "function pendingOwner() view returns (address)",
   "function epochs(uint256) view returns (uint256 snapshotTime, uint256 poolAmount, uint256 totalNodes, uint256 totalClaimed, bool settled, bool disabled)",
   "function epochRank(uint256 epochId, address node) view returns (uint256)",
   "function claimed(uint256 epochId, address node) view returns (bool)",
