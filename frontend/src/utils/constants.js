@@ -89,6 +89,8 @@ export const formatEther = (value, decimals = 4) => {
 export const CUSTOM_ERRORS = {
   NotOwner: '当前钱包不是合约 owner，无权执行该操作',
   NotAdmin: '当前钱包不是 owner 或管理员，无权执行该操作',
+  NotPendingOwner: '只有待接任的 owner 才能接受所有权',
+  TooManyNodes: '节点数量超过单期上限（1000），请分批或缩小榜单范围',
   Reentrant: '检测到重入调用，交易被拒绝',
   ContractPaused: '合约已暂停，质押/提取/开期等操作暂不可用',
   InvalidToken: '代币地址无效',

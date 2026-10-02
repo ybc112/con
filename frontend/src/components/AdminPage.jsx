@@ -58,6 +58,22 @@ const LABELS = {
     epochTipNoEpoch: '尚未开期，本期排名分红为 0。',
     epochTipClaimStarted: '领取期已开始，本期不能再追加注资。',
 
+    rankDist: '排名分红（独立分红合约）',
+    rankDistDesc: '原主合约缺少待领取查询接口，用户无法领取排名分红，故改由独立合约发放。开期会用当前排行榜作快照，此后不可修改，用户到领取期自行领取。',
+    rankDistAddr: '分红合约地址',
+    rankDistEpoch: '当前期号',
+    rankDistPool: '本期奖池',
+    rankDistNodes: '快照节点数',
+    rankDistClaimed: '已领取',
+    rankDistPhase: '状态',
+    rankDistOpen: '开期（快照当前榜单，开启新一期）',
+    rankDistSettle: '结算当前期（未领部分滚入下期）',
+    rankDistFund: '向本期奖池注资',
+    rankDistFundBtn: '确认注资',
+    rankDistTipNoEpoch: '尚未开期，用户看不到待领排名分红，请先点「开期」。',
+    rankDistTipNeedSettle: '上一期还未结算且领取期未结束，暂不能开新期（可先结算，或等领取期结束）。',
+    rankDistTipFunded: '本期已注资，用户现在即可领取排名分红。',
+
     invitePool: '邀请储备充值',
     invitePoolDesc: '用户每推荐 1 个达标用户，合约扣 100 CON 作为邀请奖励。储备不足时，被推荐的新用户质押会整笔回滚（NoInviteReserve）。',
     invitePoolBtn: '充值邀请储备',
@@ -172,6 +188,22 @@ const LABELS = {
     epochTipLowNodes: 'Fewer than 10 nodes: opening now marks the epoch as merged and rolls the pool over.',
     epochTipNoEpoch: 'No epoch opened yet — rank dividends are currently 0.',
     epochTipClaimStarted: 'Claim period has started; no further funding this epoch.',
+
+    rankDist: 'Rank Dividends (standalone distributor)',
+    rankDistDesc: 'The main contract lacks a pending-reward getter, so rank dividends are paid by a standalone distributor. Opening an epoch snapshots the current leaderboard and is immutable afterwards; users claim during the window.',
+    rankDistAddr: 'Distributor address',
+    rankDistEpoch: 'Current epoch',
+    rankDistPool: 'Epoch pool',
+    rankDistNodes: 'Snapshot nodes',
+    rankDistClaimed: 'Claimed',
+    rankDistPhase: 'Status',
+    rankDistOpen: 'Open epoch (snapshot leaderboard)',
+    rankDistSettle: 'Settle epoch (roll unclaimed into next)',
+    rankDistFund: 'Fund current epoch pool',
+    rankDistFundBtn: 'Fund',
+    rankDistTipNoEpoch: 'No epoch opened — users see no claimable rank dividends. Click "Open epoch" first.',
+    rankDistTipNeedSettle: 'Previous epoch is unsettled and its claim window is still open — cannot open a new one yet.',
+    rankDistTipFunded: 'This epoch is funded; users can claim their rank dividends now.',
 
     invitePool: 'Invite Reserve Top-up',
     invitePoolDesc: 'Each qualified referral deducts 100 CON. If the reserve runs out, new referred users cannot stake (NoInviteReserve).',
@@ -301,6 +333,8 @@ export default function AdminPage({ account, contracts, stakingData, onRefresh }
 
   const [working, setWorking] = useState('');
   const [releaseAmount, setReleaseAmount] = useState('');
+  const [rankFundAmount, setRankFundAmount] = useState('');
+  const [distEpoch, setDistEpoch] = useState(null);
   const [invitePoolAmount, setInvitePoolAmount] = useState('');
   const [inviteReward, setInviteReward] = useState('');
   const [minStakeValue, setMinStakeValue] = useState('');
@@ -354,6 +388,35 @@ export default function AdminPage({ account, contracts, stakingData, onRefresh }
 
   useEffect(() => { refetchAllowance(); }, [refetchAllowance]);
 
+  // 独立分红合约：当前期状态（期号/奖池/节点/已领/领取窗口）
+  const dist = contracts?.rankDistributor;
+  const refetchDist = useCallback(async () => {
+    if (!dist) { setDistEpoch(null); return; }
+    try {
+      const id = Number(await dist.currentEpochId());
+      if (id === 0) { setDistEpoch({ epochId: 0 }); return; }
+      const ep = await dist.epochs(id);
+      const [claimStart, claimEnd] = await Promise.all([
+        dist.claimStart(id).catch(() => 0n),
+        dist.claimEnd(id).catch(() => 0n),
+      ]);
+      setDistEpoch({
+        epochId: id,
+        poolAmount: ethers.formatEther(ep.poolAmount ?? ep[1]),
+        totalNodes: Number(ep.totalNodes ?? ep[2]),
+        totalClaimed: ethers.formatEther(ep.totalClaimed ?? ep[3]),
+        settled: ep.settled ?? ep[4],
+        disabled: ep.disabled ?? ep[5],
+        claimStart: Number(claimStart),
+        claimEnd: Number(claimEnd),
+      });
+    } catch {
+      setDistEpoch(null);
+    }
+  }, [dist]);
+
+  useEffect(() => { refetchDist(); }, [refetchDist]);
+
   // 用于倒计时的秒级心跳
   useEffect(() => {
     const timer = setInterval(() => setNowSec(Math.floor(Date.now() / 1000)), 1000);
@@ -376,11 +439,27 @@ export default function AdminPage({ account, contracts, stakingData, onRefresh }
   // 合约规则：本期未结算，且「不在领取窗口内」（合并期不受限）时才允许注资
   const canFundEpoch = canOperate && !paused && ['display', 'disabled', 'expired'].includes(phase);
 
+  // 独立分红合约：阶段判定（DISPLAY_PERIOD=0，开期即可领）与可操作性
+  const distPhase = useMemo(() => {
+    if (!distEpoch || !distEpoch.epochId) return 'none';
+    if (distEpoch.disabled) return 'disabled';
+    if (distEpoch.settled) return 'settled';
+    if (nowSec < distEpoch.claimStart) return 'display';
+    if (nowSec < distEpoch.claimEnd) return 'claim';
+    return 'expired';
+  }, [distEpoch, nowSec]);
+
+  // 独立分红合约使用 onlyOwner（非 operator），因此按钮只对 owner 开放
+  const canRankOpen = isOwner && !!contracts?.writeRankDistributor && ['none', 'settled', 'expired', 'disabled'].includes(distPhase);
+  const canRankSettle = isOwner && !!contracts?.writeRankDistributor && ['expired', 'disabled'].includes(distPhase);
+  const canRankFund = isOwner && !!contracts?.writeRankDistributor && ['display', 'claim'].includes(distPhase);
+
   const refresh = useCallback(() => {
     onRefresh?.();
     overview.refetch();
     refetchAllowance();
-  }, [onRefresh, overview, refetchAllowance]);
+    refetchDist();
+  }, [onRefresh, overview, refetchAllowance, refetchDist]);
 
   // 统一写操作封装：loading 提示 + 错误解码 + 成功后刷新
   const run = useCallback(async (key, loadingText, successText, fn) => {
@@ -459,11 +538,11 @@ export default function AdminPage({ account, contracts, stakingData, onRefresh }
   const settleEpoch = () => run('settleEpoch', '正在结算…', '结算成功', () => contracts.writeStakingBank.settleEpoch());
 
   // 注资/充值前自动授权 CON：不足则先 approve（MaxUint256），避免「insufficient allowance」报错
-  const ensureTokenAllowance = async () => {
-    if (!contracts?.writeNbtToken || !account || !CONTRACTS.STAKING_BANK) return;
-    const allowance = await contracts.writeNbtToken.allowance(account, CONTRACTS.STAKING_BANK);
+  const ensureTokenAllowance = async (spender = CONTRACTS.STAKING_BANK) => {
+    if (!contracts?.writeNbtToken || !account || !spender) return;
+    const allowance = await contracts.writeNbtToken.allowance(account, spender);
     if (allowance < ethers.MaxUint256 / 2n) {
-      const tx = await contracts.writeNbtToken.approve(CONTRACTS.STAKING_BANK, ethers.MaxUint256, { gasLimit: 300000 });
+      const tx = await contracts.writeNbtToken.approve(spender, ethers.MaxUint256, { gasLimit: 300000 });
       await tx.wait();
     }
   };
@@ -475,6 +554,40 @@ export default function AdminPage({ account, contracts, stakingData, onRefresh }
       await ensureTokenAllowance();
       const tx = await contracts.writeStakingBank.fundEpoch(amount, { gasLimit: 2000000 });
       setReleaseAmount('');
+      return tx;
+    });
+  };
+
+  // ---- 独立分红合约：开期（快照榜单）/ 注资 / 结算 ----
+  const openRankEpoch = async () => {
+    let nodes = [];
+    try {
+      const rk = await contracts.stakingBank.getRankedNodes(0, 5000);
+      nodes = Array.from(rk.nodes || rk[0] || []);
+    } catch { /* fallthrough */ }
+    if (nodes.length === 0) { toast.error('当前没有任何节点，无法开期'); return; }
+    run('rankOpen', '正在开期（快照榜单）…', `开期成功（${nodes.length} 个节点）`, () => {
+      // 每节点约 1 个存储槽：387 节点实测约 9M gas，按 30k/节点估算并设上限
+      const gasLimit = Math.min(12000000, Math.max(600000, nodes.length * 30000 + 300000));
+      return contracts.writeRankDistributor.openEpoch(nodes, { gasLimit });
+    });
+  };
+
+  const settleRankEpoch = () => {
+    const id = distEpoch?.epochId;
+    if (!id) { toast.error('当前没有可结算的期'); return; }
+    run('rankSettle', '正在结算…', '结算成功', () => contracts.writeRankDistributor.settleEpoch(id, { gasLimit: 300000 }));
+  };
+
+  const fundRankEpoch = () => {
+    const amount = parseAmount(rankFundAmount);
+    if (!amount) return;
+    const id = distEpoch?.epochId;
+    if (!id) { toast.error('请先开期再注资'); return; }
+    run('rankFund', '正在注资…', '注资成功', async () => {
+      await ensureTokenAllowance(CONTRACTS.RANK_DISTRIBUTOR);
+      const tx = await contracts.writeRankDistributor.fundEpoch(id, amount, { gasLimit: 300000 });
+      setRankFundAmount('');
       return tx;
     });
   };
@@ -853,6 +966,113 @@ export default function AdminPage({ account, contracts, stakingData, onRefresh }
             className="btn-premium disabled:opacity-50"
           >
             <span>{isBusy('fundEpoch') ? l('working') : l('fundEpochBtn')}</span>
+          </button>
+        </div>
+      </Card>
+
+      {/* 排名分红（独立分红合约） */}
+      <Card icon={FiSend} title={l('rankDist')} tone="#A78BFA">
+        <p className="text-sm text-white/50 mb-4 leading-relaxed">{l('rankDistDesc')}</p>
+
+        <div className="mb-4 flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-white/40">{l('rankDistAddr')}</span>
+          <a
+            href={getExplorerAddressUrl(CONTRACTS.RANK_DISTRIBUTOR)}
+            target="_blank"
+            rel="noreferrer"
+            className="text-[#A78BFA] hover:underline font-mono"
+          >
+            {formatAddress(CONTRACTS.RANK_DISTRIBUTOR)}
+          </a>
+          <button onClick={() => copyAddress(CONTRACTS.RANK_DISTRIBUTOR)} className="text-white/40 hover:text-white/70">
+            <FiCopy size={12} />
+          </button>
+        </div>
+
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+          <div className="p-3 rounded-xl bg-white/5 border border-white/10">
+            <div className="text-xs text-white/40 mb-1">{l('rankDistEpoch')}</div>
+            <div className="text-sm font-bold text-white">{distEpoch?.epochId ?? '—'}</div>
+          </div>
+          <div className="p-3 rounded-xl bg-white/5 border border-white/10">
+            <div className="text-xs text-white/40 mb-1">{l('rankDistPool')}</div>
+            <div className="text-sm font-bold text-white">{distEpoch?.poolAmount ? `${fmtCsv(distEpoch.poolAmount)} CON` : '—'}</div>
+          </div>
+          <div className="p-3 rounded-xl bg-white/5 border border-white/10">
+            <div className="text-xs text-white/40 mb-1">{l('rankDistNodes')}</div>
+            <div className="text-sm font-bold text-white">{distEpoch?.totalNodes ?? '—'}</div>
+          </div>
+          <div className="p-3 rounded-xl bg-white/5 border border-white/10">
+            <div className="text-xs text-white/40 mb-1">{l('rankDistClaimed')}</div>
+            <div className="text-sm font-bold text-white">{distEpoch?.totalClaimed ? `${fmtCsv(distEpoch.totalClaimed)} CON` : '—'}</div>
+          </div>
+        </div>
+
+        {distEpoch && distEpoch.epochId > 0 && (
+          <div className="mb-5 p-4 rounded-xl bg-white/5 border border-white/10">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-xs text-white/40">{l('rankDistPhase')}</div>
+              <div className="text-xs font-bold text-white">
+                {l(`phase${distPhase.charAt(0).toUpperCase()}${distPhase.slice(1)}`)}
+              </div>
+            </div>
+            <div className="grid sm:grid-cols-2 gap-3 text-sm">
+              <div>
+                <div className="text-white/35 text-xs mb-1">{l('claimStart')}</div>
+                <div className="text-white/80">{fmtTime(distEpoch.claimStart)}</div>
+              </div>
+              <div>
+                <div className="text-white/35 text-xs mb-1">{l('claimEnd')}</div>
+                <div className="text-white/80">{fmtTime(distEpoch.claimEnd)}</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {distPhase === 'none' && (
+          <div className="mb-4 rounded-lg bg-[#FFB800]/10 border border-[#FFB800]/30 p-3 text-sm text-[#FFD98A]">
+            {l('rankDistTipNoEpoch')}
+          </div>
+        )}
+        {distPhase === 'claim' && Number(distEpoch?.poolAmount || 0) > 0 && (
+          <div className="mb-4 rounded-lg bg-[#00D9A5]/10 border border-[#00D9A5]/30 p-3 text-sm text-[#7FE7C9]">
+            {l('rankDistTipFunded')}
+          </div>
+        )}
+        {['display', 'claim'].includes(distPhase) && !(Number(distEpoch?.poolAmount || 0) > 0) && (
+          <div className="mb-4 rounded-lg bg-[#FFB800]/10 border border-[#FFB800]/30 p-3 text-sm text-[#FFD98A]">
+            {l('rankDistTipNoEpoch')}
+          </div>
+        )}
+
+        {!isOwner && (
+          <div className="mb-4 rounded-lg bg-white/5 border border-white/10 p-3 text-xs text-white/45">
+            {l('roleNoneHint')}
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <button onClick={openRankEpoch} disabled={anyBusy || !canRankOpen} className="btn-ghost disabled:opacity-50">
+            {isBusy('rankOpen') ? l('working') : l('rankDistOpen')}
+          </button>
+          <button onClick={settleRankEpoch} disabled={anyBusy || !canRankSettle} className="btn-ghost disabled:opacity-50">
+            {isBusy('rankSettle') ? l('working') : l('rankDistSettle')}
+          </button>
+        </div>
+
+        <div className="grid sm:grid-cols-[1fr_auto] gap-3">
+          <input
+            className="input-premium"
+            value={rankFundAmount}
+            onChange={(e) => setRankFundAmount(e.target.value)}
+            placeholder={l('rankDistFund')}
+          />
+          <button
+            onClick={fundRankEpoch}
+            disabled={anyBusy || !canRankFund || !rankFundAmount}
+            className="btn-premium disabled:opacity-50"
+          >
+            <span>{isBusy('rankFund') ? l('working') : l('rankDistFundBtn')}</span>
           </button>
         </div>
       </Card>
